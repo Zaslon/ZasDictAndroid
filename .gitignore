@@ -1,0 +1,46 @@
+# Gradle
+.gradle/
+build/
+*/build/
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+captures/
+output.json
+
+# ローカル環境設定（SDKパス等。各自の環境で生成される）
+local.properties
+
+# Kotlin
+.kotlin/
+
+# APK / バンドル / ビルド成果物
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# 署名キー（誤ってコミットしないこと）
+*.jks
+*.keystore
+key.properties
+
+# ログ・一時ファイル
+*.log
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# プロファイリング
+*.hprof
+
+# バージョン管理対象外のローカルツール設定
+.vscode/
