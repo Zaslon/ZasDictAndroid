@@ -64,4 +64,7 @@ object Const {
     )
 
     const val PRONUNCIATION_TITLE = "発音記号"
+
+    /** 内容欄の種類（エディタで上から順に追加ボタンとして表示。各項目は1つまで） */
+    val CONTENT_TYPES = listOf("語法", "文化", "用例", "語源")
 }

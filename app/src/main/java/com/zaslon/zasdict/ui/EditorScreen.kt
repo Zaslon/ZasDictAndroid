@@ -83,7 +83,12 @@ fun EditorScreen(
     var form by remember { mutableStateOf(draft.form) }
     var pronunciation by remember { mutableStateOf(draft.pronunciation) }
     val translations = remember { draft.translations.toMutableStateList() }
-    val contents = remember { draft.contents.toMutableStateList() }
+    val contents = remember {
+        // 語法→文化→用例→語源→（その他）の順で初期表示する
+        draft.contents.sortedBy { c ->
+            Const.CONTENT_TYPES.indexOf(c.title).let { if (it < 0) Const.CONTENT_TYPES.size else it }
+        }.toMutableStateList()
+    }
     val relations = remember { draft.relations.toMutableStateList() }
     var tags by remember { mutableStateOf(draft.tags) }
     val variations = remember { draft.variations.toMutableStateList() }
@@ -186,19 +191,22 @@ fun EditorScreen(
             }
 
             // ----------------------------------------------------------
-            SectionHeader("内容")
+            SectionHeader("内容（各項目は1つまで）")
+            // 表示・保存順を 語法→文化→用例→語源→（その他の既存タイトル）に揃える
+            fun contentRank(title: String): Int =
+                Const.CONTENT_TYPES.indexOf(title).let { if (it < 0) Const.CONTENT_TYPES.size else it }
+
             contents.forEachIndexed { index, c ->
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
-                            value = c.title,
-                            onValueChange = { contents[index] = c.copy(title = it) },
-                            label = { Text("タイトル（例: 例文, 語法）") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
+                        Text(
+                            text = c.title.ifEmpty { "（無題）" },
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { contents.removeAt(index) }) {
                             Icon(Icons.Default.Delete, contentDescription = "削除")
@@ -213,9 +221,24 @@ fun EditorScreen(
                     )
                 }
             }
-            OutlinedButton(onClick = { contents.add(DraftContent()) }) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Text("内容を追加")
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Const.CONTENT_TYPES.forEach { title ->
+                    val exists = contents.any { it.title == title }
+                    OutlinedButton(
+                        onClick = {
+                            if (!exists) {
+                                contents.add(DraftContent(title = title))
+                                val sorted = contents.sortedBy { contentRank(it.title) }
+                                contents.clear()
+                                contents.addAll(sorted)
+                            }
+                        },
+                        enabled = !exists
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text(if (exists) "${title}（追加済み）" else "${title}を追加")
+                    }
+                }
             }
 
             // ----------------------------------------------------------

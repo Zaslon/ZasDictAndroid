@@ -367,7 +367,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             contentsArr.put(JSONObject().put("title", Const.PRONUNCIATION_TITLE).put("text", draft.pronunciation.trim()))
         }
         for (c in draft.contents) {
-            if (c.title.trim().isEmpty() && c.text.trim().isEmpty()) continue
+            // タイトルは固定（語法/文化/用例/語源）なので、本文が空のセクションは保存しない
+            if (c.text.trim().isEmpty()) continue
             contentsArr.put(JSONObject().put("title", c.title.trim()).put("text", c.text))
         }
 
