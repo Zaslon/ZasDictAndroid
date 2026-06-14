@@ -224,19 +224,19 @@ fun EditorScreen(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Const.CONTENT_TYPES.forEach { title ->
                     val exists = contents.any { it.title == title }
-                    OutlinedButton(
-                        onClick = {
-                            if (!exists) {
+                    // 追加済みのものはボタンを非表示にする
+                    if (!exists) {
+                        OutlinedButton(
+                            onClick = {
                                 contents.add(DraftContent(title = title))
                                 val sorted = contents.sortedBy { contentRank(it.title) }
                                 contents.clear()
                                 contents.addAll(sorted)
                             }
-                        },
-                        enabled = !exists
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text(if (exists) "${title}（追加済み）" else "${title}を追加")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Text("${title}を追加")
+                        }
                     }
                 }
             }
