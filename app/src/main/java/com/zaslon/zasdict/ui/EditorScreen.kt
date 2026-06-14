@@ -191,7 +191,7 @@ fun EditorScreen(
             }
 
             // ----------------------------------------------------------
-            SectionHeader("内容（各項目は1つまで）")
+            SectionHeader("内容")
             // 表示・保存順を 語法→文化→用例→語源→（その他の既存タイトル）に揃える
             fun contentRank(title: String): Int =
                 Const.CONTENT_TYPES.indexOf(title).let { if (it < 0) Const.CONTENT_TYPES.size else it }
