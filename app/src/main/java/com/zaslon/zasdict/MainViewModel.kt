@@ -408,7 +408,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             word.put("variations", variationsArr)
             word.put("relations", relationsArr)
             store.addWord(word)
-            changelog.addEntry("追加", form)
+            changelog.addEntry("ADD", form)
         } else {
             val word = engine.lookup(id) ?: run {
                 post("対象の単語が見つかりません。")
@@ -425,7 +425,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (oldForm != form) {
                 updateRelationFormsEverywhere(id, form)
             }
-            changelog.addEntry("編集", form, if (oldForm != form) "旧: $oldForm" else "")
+            changelog.addEntry("CHANGE", form, if (oldForm != form) "旧: $oldForm" else "")
         }
 
         // 対照関係の同期
@@ -512,7 +512,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (r?.optJSONObject("entry")?.optInt("id", -1) == id) rels.remove(i) else i++
             }
         }
-        changelog.addEntry("削除", form)
+        changelog.addEntry("DELETE", form)
         refreshAfterDataChange()
         post("「$form」を削除しました")
     }
