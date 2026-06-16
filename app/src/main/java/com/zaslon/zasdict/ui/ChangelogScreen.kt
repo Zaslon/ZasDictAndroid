@@ -78,7 +78,8 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                     }
                 },
                 actions = {
-                    if ((entries.isNotEmpty() || pending.isNotEmpty()) && !isExternalLinked) {
+                    if ((!isExternalLinked && (entries.isNotEmpty() || pending.isNotEmpty())) ||
+                        (isExternalLinked && !vm.autoSave && pending.isNotEmpty())) {
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "履歴をクリア")
                         }
