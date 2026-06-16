@@ -209,8 +209,7 @@ class ChangelogStore(private val context: Context) {
 
     private fun csvRow(cols: List<String>): String =
         cols.joinToString(",") { col ->
-            if (col.contains(',') || col.contains('"') || col.contains('\n') ||
-                col.startsWith('=') || col.startsWith('-') || col.startsWith('+') || col.startsWith('@')) {
+            if (col.contains(',') || col.contains('"') || col.contains('\n')) {
                 "\"" + col.replace("\"", "\"\"") + "\""
             } else col
         }
