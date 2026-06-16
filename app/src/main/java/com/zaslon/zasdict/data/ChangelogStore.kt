@@ -165,6 +165,12 @@ class ChangelogStore(private val context: Context) {
         return internalFile()?.exists() == true
     }
 
+    /** アプリ内部の履歴ファイルと未保存エントリをすべて削除する */
+    fun clearInternal() {
+        pendingEntries.clear()
+        internalFile()?.delete()
+    }
+
     fun readAll(): List<ChangelogEntry> {
         val text = currentCsvText() ?: return emptyList()
         val lines = text.split("\n")

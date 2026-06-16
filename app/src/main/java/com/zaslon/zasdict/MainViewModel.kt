@@ -648,6 +648,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         post("連携を解除しました。以後はアプリ内部に保存されます。")
     }
 
+    /** アプリ内部の更新履歴をすべて削除する */
+    fun clearChangelogHistory() {
+        changelog.clearInternal()
+        changelogVersion++
+        post("更新履歴を削除しました")
+    }
+
     /** 連携中の外部CSVの表示名（未連携なら null） */
     fun changelogLinkedName(): String? =
         changelog.linkedUri()?.let {
