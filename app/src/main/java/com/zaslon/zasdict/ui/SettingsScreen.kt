@@ -26,9 +26,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import kotlin.math.roundToInt
 
 /**
@@ -40,9 +42,13 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(vm: MainViewModel, navController: NavController) {
 
+    val einkMode = LocalEinkMode.current
+
     // 音量キーでスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
     val fontPickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -64,7 +70,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
+                .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

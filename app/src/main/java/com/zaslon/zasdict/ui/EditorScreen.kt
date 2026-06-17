@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -57,6 +58,7 @@ import com.zaslon.zasdict.EditorDraft
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.domain.Const
+import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
 /**
  * 単語編集画面（editor.py の EntryEditorDialog に相当）。
@@ -95,9 +97,13 @@ fun EditorScreen(
 
     var showRelationPicker by remember { mutableStateOf<Int?>(null) } // 編集対象 relation index
 
+    val einkMode = LocalEinkMode.current
+
     // 音量キーで編集画面をスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
     val isNew = draft.originalId == null
 
@@ -137,7 +143,7 @@ fun EditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
+                .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

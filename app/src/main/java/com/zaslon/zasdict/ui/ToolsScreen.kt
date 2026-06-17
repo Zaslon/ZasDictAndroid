@@ -27,10 +27,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import com.zaslon.zasdict.domain.Ipa
 import com.zaslon.zasdict.domain.Kaiomom
 
@@ -75,9 +77,13 @@ fun ToolsScreen(vm: MainViewModel, navController: NavController, initialTab: Int
 
 @Composable
 private fun DialectConvertTab(vm: MainViewModel) {
+    val einkMode = LocalEinkMode.current
+
     // 音量キーでスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
     var input by remember { mutableStateOf("") }
     val result = remember(input) {
         if (input.isBlank()) null else try {
@@ -90,7 +96,7 @@ private fun DialectConvertTab(vm: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
+            .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -135,9 +141,13 @@ private fun ConvertResultCard(title: String, value: String) {
 
 @Composable
 private fun IpaConvertTab() {
+    val einkMode = LocalEinkMode.current
+
     // 音量キーでスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
     var input by remember { mutableStateOf("") }
     val converted = remember(input) {
         if (input.isBlank()) "" else Ipa.ipaToSpell(input)
@@ -146,7 +156,7 @@ private fun IpaConvertTab() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
+            .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {

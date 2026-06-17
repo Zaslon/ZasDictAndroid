@@ -34,10 +34,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
 /**
  * 更新履歴画面（changelog.py の ChangelogViewerWidget に相当）。
@@ -47,9 +49,13 @@ import com.zaslon.zasdict.MainViewModel
 @Composable
 fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
 
+    val einkMode = LocalEinkMode.current
+
     // 音量キーで履歴リストをスクロール
     val listState = rememberLazyListState()
     VolumeScrollEffect(listState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(listState)
 
     // 連携・保存のたびに再読込する
     val entries = remember(vm.changelogVersion) { vm.changelog.readAll().reversed() } // 新しい順
@@ -166,7 +172,10 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                     )
                 }
             } else {
-                LazyColumn(state = listState) {
+                LazyColumn(
+                    state = listState,
+                    modifier = if (einkMode) Modifier.nestedScroll(einkScrollConnection) else Modifier
+                ) {
                     items(pending.reversed()) { e ->
                         ChangelogRow(e.timestamp, e.type, e.form, e.details, pendingMark = true)
                         Divider()

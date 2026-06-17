@@ -24,9 +24,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
 /**
  * 辞書依存設定画面（DictionarySettingsDialog に相当）。
@@ -36,9 +38,13 @@ import com.zaslon.zasdict.MainViewModel
 @Composable
 fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController) {
 
+    val einkMode = LocalEinkMode.current
+
     // 音量キーでスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
     var punctuations by remember {
         mutableStateOf(vm.store.getPunctuations().joinToString(""))
@@ -63,7 +69,7 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
+                .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
