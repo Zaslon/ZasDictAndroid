@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,7 @@ import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.domain.Const
+import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
 /**
  * 単語詳細画面（デスクトップ版の詳細ペイン＋detail.css に相当）。
@@ -57,9 +59,13 @@ fun DetailScreen(
     val word = vm.wordById(wordId)
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    val einkMode = LocalEinkMode.current
+
     // 音量キーで詳細をスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
     val scale = vm.fontScale
 
@@ -100,7 +106,7 @@ fun DetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
+                .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

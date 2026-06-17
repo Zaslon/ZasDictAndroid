@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -67,9 +68,13 @@ fun SearchScreen(
     var contextMenuFor by remember { mutableStateOf<Int?>(null) }
     var deleteConfirmFor by remember { mutableStateOf<JSONObject?>(null) }
 
+    val einkMode = LocalEinkMode.current
+
     // 音量キーで結果リストをスクロール
     val resultListState = rememberLazyListState()
     VolumeScrollEffect(resultListState)
+
+    val einkScrollConnection = rememberEinkNestedScrollConnection(resultListState)
 
     // ファイルピッカー（OTM-json を開く）
     val openLauncher = rememberLauncherForActivityResult(
@@ -158,13 +163,12 @@ fun SearchScreen(
             )
         },
         floatingActionButton = {
-            val eink = LocalEinkMode.current
             FloatingActionButton(
                 onClick = {
                     vm.startNewEntry(vm.searchText)
                     if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
                 },
-                elevation = if (eink) {
+                elevation = if (einkMode) {
                     FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
                 } else {
                     FloatingActionButtonDefaults.elevation()
@@ -273,7 +277,10 @@ fun SearchScreen(
                 }
             }
 
-            LazyColumn(state = resultListState, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = resultListState,
+                modifier = if (einkMode) Modifier.fillMaxSize().nestedScroll(einkScrollConnection) else Modifier.fillMaxSize()
+            ) {
                 items(displayItems) { (display, word) ->
                     val id = DictionaryStore.idOf(word)
                     Box {
