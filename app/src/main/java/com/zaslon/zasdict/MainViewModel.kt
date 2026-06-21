@@ -1,6 +1,7 @@
 package com.zaslon.zasdict
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
 import android.net.Uri
@@ -12,13 +13,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zaslon.zasdict.data.ChangelogStore
 import com.zaslon.zasdict.data.DictionaryStore
+import com.zaslon.zasdict.data.DropboxApiClient
 import com.zaslon.zasdict.data.Prefs
 import com.zaslon.zasdict.data.SafIo
 import com.zaslon.zasdict.data.SearchEngine
+import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.domain.Const
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -51,6 +55,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val store = DictionaryStore()
     val engine = SearchEngine(store)
     val changelog = ChangelogStore(app)
+
+    private val dropboxClient = DropboxApiClient()
 
     // ------------------------------------------------------------------
     // UI状態
@@ -99,9 +105,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var currentUri: Uri? = null
     private var searchJob: Job? = null
 
+    // ------------------------------------------------------------------
+    // Dropbox 状態
+    // ------------------------------------------------------------------
+
+    var storageMode by mutableStateOf(prefs.storageMode)
+        private set
+    var dropboxConnected by mutableStateOf(prefs.dropboxRefreshToken != null)
+        private set
+    var dropboxDisplayName by mutableStateOf(prefs.dropboxDisplayName)
+        private set
+    var dropboxDictName by mutableStateOf(prefs.dropboxDictName)
+        private set
+
+    /** ローカルキャッシュにDropboxへ未アップロードの変更がある */
+    var dropboxHasPendingUpload by mutableStateOf(prefs.dropboxHasPendingUpload)
+        private set
+
+    /** "dict" = 辞書ファイル選択中（Dropboxブラウザを表示） */
+    var dropboxBrowserTarget by mutableStateOf<String?>(null)
+        private set
+    var dropboxBrowserEntries by mutableStateOf<List<DropboxApiClient.FileEntry>>(emptyList())
+        private set
+    var dropboxBrowserPath by mutableStateOf("")
+        private set
+    var dropboxBrowserLoading by mutableStateOf(false)
+        private set
+    var dropboxBrowserError by mutableStateOf<String?>(null)
+        private set
+
+    companion object {
+        /** MainActivity から OAuth2 コールバックのコードを受け取るチャンネル */
+        val pendingDropboxAuthCode = MutableStateFlow<String?>(null)
+        /** PKCE フロー中の code_verifier（認可〜トークン交換まで保持） */
+        var pkceVerifier: String? = null
+    }
+
     init {
         loadIdyerFontFamily()
         restoreLastDictionary()
+        viewModelScope.launch {
+            pendingDropboxAuthCode.collect { code ->
+                if (code != null) {
+                    pendingDropboxAuthCode.value = null
+                    handleDropboxAuthCode(code)
+                }
+            }
+        }
     }
 
     fun consumeMessage() { message = null }
@@ -112,10 +162,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         get() = if (useIdyerFont) idyerFontFamily else null
 
     // ------------------------------------------------------------------
-    // ファイル操作
+    // ファイル操作（ローカルモード）
     // ------------------------------------------------------------------
 
     private fun restoreLastDictionary() {
+        if (storageMode == StorageMode.DROPBOX) {
+            restoreDropboxCache()
+            return
+        }
         val uriString = prefs.lastDictionaryUri ?: return
         val uri = Uri.parse(uriString)
         viewModelScope.launch(Dispatchers.IO) {
@@ -138,9 +192,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
-                } catch (_: SecurityException) {
-                    // 永続権限が取れない場合もそのまま読み込みは試みる
-                }
+                } catch (_: SecurityException) { }
                 loadDictionaryFromUri(uri)
                 prefs.lastDictionaryUri = uri.toString()
                 withContext(Dispatchers.Main) {
@@ -197,7 +249,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val resolver = getApplication<Application>().contentResolver
-                // クラウドプロバイダ（Box/OneDrive等）の "wt" 非対応に備えたフォールバック付き書き込み
                 SafIo.writeText(resolver, uri, store.toJsonString())
 
                 var relinkNeeded = false
@@ -210,9 +261,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     } catch (_: SecurityException) { }
                     currentUri = uri
                     prefs.lastDictionaryUri = uri.toString()
-                    // 名前を付けて保存で保存先が変わっても、保留中の履歴は失わない。
-                    // 連携中の外部CSVは引き継がず、新しいCSVの選択を促す
-                    // （保留中の履歴は一旦アプリ内部に保存され、再連携時にCSVへ移行される）。
                     relinkNeeded = changelog.isExternalLinked()
                     changelog.setDictionary(uri.toString(), clearPending = false)
                 }
@@ -235,9 +283,357 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun autoSaveIfEnabled() {
-        if (autoSave && currentUri != null) {
-            saveFile()
+        when (storageMode) {
+            StorageMode.LOCAL -> if (autoSave && currentUri != null) saveFile()
+            StorageMode.DROPBOX -> if (prefs.dropboxDictPath != null) saveToDropboxLocalCache()
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Dropbox 操作
+    // ------------------------------------------------------------------
+
+    /** App Key を保存してモードを DROPBOX に切り替える */
+    fun updateDropboxAppKey(key: String) {
+        prefs.dropboxAppKey = key.trim()
+    }
+
+    /** ストレージモードを切り替える */
+    fun updateStorageMode(mode: StorageMode) {
+        storageMode = mode
+        prefs.storageMode = mode
+        // 辞書状態をリセット
+        store.clear()
+        currentUri = null
+        fileName = null
+        hasUnsavedChanges = false
+        wordCount = 0
+        results = emptyList()
+        searchText = ""
+        editorDraft = null
+        changelog.setDictionary(null)
+        // 切替先の辞書を自動復元
+        restoreLastDictionary()
+        post("${if (mode == StorageMode.LOCAL) "ローカル" else "Dropbox"}モードに切り替えました")
+    }
+
+    /** Dropbox OAuth2 PKCE 認証フローをブラウザで開始する */
+    fun launchDropboxAuth(context: Context) {
+        val appKey = prefs.dropboxAppKey
+        if (appKey.isEmpty()) {
+            post("App Key を入力してください")
+            return
+        }
+        val verifier = dropboxClient.generatePkceVerifier()
+        pkceVerifier = verifier
+        val challenge = dropboxClient.generatePkceChallenge(verifier)
+        val url = dropboxClient.buildAuthUrl(appKey, challenge)
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
+    /** MainActivity から OAuth2 コードを受け取ってトークン交換を行う */
+    private fun handleDropboxAuthCode(code: String) {
+        val verifier = pkceVerifier ?: run {
+            post("認証エラー: PKCE verifier が見つかりません")
+            return
+        }
+        pkceVerifier = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = dropboxClient.exchangeCodeForToken(code, verifier, prefs.dropboxAppKey)
+                prefs.dropboxAccessToken = result.accessToken
+                if (result.refreshToken != null) prefs.dropboxRefreshToken = result.refreshToken
+                prefs.dropboxTokenExpiry = System.currentTimeMillis() + result.expiresIn * 1000L
+                val name = dropboxClient.getCurrentAccountName(result.accessToken)
+                prefs.dropboxDisplayName = name
+                withContext(Dispatchers.Main) {
+                    dropboxConnected = true
+                    dropboxDisplayName = name
+                    post("Dropboxに接続しました${if (name.isNotEmpty()) "（$name）" else ""}")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("Dropbox接続エラー: ${e.message}") }
+            }
+        }
+    }
+
+    /** Dropbox 接続を解除する */
+    fun disconnectDropbox() {
+        prefs.dropboxAccessToken = null
+        prefs.dropboxRefreshToken = null
+        prefs.dropboxTokenExpiry = 0L
+        prefs.dropboxDisplayName = null
+        prefs.dropboxDictPath = null
+        prefs.dropboxDictName = null
+        prefs.dropboxChangelogPath = null
+        prefs.dropboxHasPendingUpload = false
+        dropboxConnected = false
+        dropboxDisplayName = null
+        dropboxDictName = null
+        dropboxHasPendingUpload = false
+        post("Dropbox接続を解除しました")
+    }
+
+    /** 有効なアクセストークンを返す（必要なら refresh する） */
+    private suspend fun getValidAccessToken(): String = withContext(Dispatchers.IO) {
+        val token = prefs.dropboxAccessToken
+            ?: throw IllegalStateException("Dropboxに接続されていません")
+        val refreshToken = prefs.dropboxRefreshToken
+            ?: throw IllegalStateException("Dropboxに接続されていません")
+
+        if (System.currentTimeMillis() < prefs.dropboxTokenExpiry - 300_000L) {
+            return@withContext token
+        }
+        val result = dropboxClient.refreshAccessToken(refreshToken, prefs.dropboxAppKey)
+        prefs.dropboxAccessToken = result.accessToken
+        prefs.dropboxTokenExpiry = System.currentTimeMillis() + result.expiresIn * 1000L
+        result.accessToken
+    }
+
+    // ------------------------------------------------------------------
+    // Dropbox ファイルブラウザ
+    // ------------------------------------------------------------------
+
+    fun openDropboxBrowser() {
+        if (!dropboxConnected) {
+            post("先にDropboxに接続してください")
+            return
+        }
+        dropboxBrowserTarget = "dict"
+        dropboxBrowserPath = ""
+        loadDropboxFolder("")
+    }
+
+    fun openDropboxBrowserForChangelog() {
+        if (!dropboxConnected) {
+            post("先にDropboxに接続してください")
+            return
+        }
+        val startPath = prefs.dropboxChangelogPath
+            ?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
+            ?: prefs.dropboxDictPath?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
+            ?: ""
+        dropboxBrowserTarget = "changelog"
+        dropboxBrowserPath = startPath
+        loadDropboxFolder(startPath)
+    }
+
+    fun selectDropboxChangelogPath(path: String) {
+        prefs.dropboxChangelogPath = path
+        dropboxBrowserTarget = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidAccessToken()
+                val csvText = dropboxClient.downloadFile(token, path)
+                changelog.loadFromText(csvText)
+            } catch (_: Exception) { }
+            withContext(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を変更しました: $path")
+            }
+        }
+    }
+
+    fun selectDropboxChangelogFolder(folderPath: String) {
+        val dictBaseName = (prefs.dropboxDictName ?: "dictionary").removeSuffix(".json")
+        val csvPath = "$folderPath/${dictBaseName}_changelog.csv"
+        prefs.dropboxChangelogPath = csvPath
+        dropboxBrowserTarget = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidAccessToken()
+                val csvText = dropboxClient.downloadFile(token, csvPath)
+                changelog.loadFromText(csvText)
+            } catch (_: Exception) { }
+            withContext(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を設定しました: $csvPath")
+            }
+        }
+    }
+
+    fun dismissDropboxBrowser() {
+        dropboxBrowserTarget = null
+    }
+
+    fun dropboxNavigateTo(path: String) {
+        dropboxBrowserPath = path
+        loadDropboxFolder(path)
+    }
+
+    fun dropboxNavigateUp() {
+        val parent = dropboxBrowserPath.substringBeforeLast("/", "")
+        dropboxBrowserPath = parent
+        loadDropboxFolder(parent)
+    }
+
+    private fun loadDropboxFolder(path: String) {
+        dropboxBrowserLoading = true
+        dropboxBrowserError = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidAccessToken()
+                val entries = dropboxClient.listFolder(token, path)
+                withContext(Dispatchers.Main) {
+                    dropboxBrowserEntries = entries
+                    dropboxBrowserLoading = false
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    dropboxBrowserError = e.message
+                    dropboxBrowserLoading = false
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Dropbox からファイルを開く
+    // ------------------------------------------------------------------
+
+    fun openFromDropbox(path: String, name: String) {
+        dropboxBrowserTarget = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidAccessToken()
+                val text = dropboxClient.downloadFile(token, path)
+                store.loadFromString(text)
+                engine.rebuild()
+
+                // ローカルキャッシュに書き込む（タスクキル対策）
+                dropboxCacheFile().writeText(text)
+
+                // changelog を辞書に紐付ける
+                val changelogPath = path.removeSuffix(".json") + "_changelog.csv"
+                prefs.dropboxDictPath = path
+                prefs.dropboxDictName = name
+                prefs.dropboxChangelogPath = changelogPath
+                prefs.dropboxHasPendingUpload = false
+                changelog.setDictionary("dropbox:$path")
+                // Dropbox上に既存のchangelogがあれば読み込む
+                try {
+                    val csvText = dropboxClient.downloadFile(token, changelogPath)
+                    changelog.loadFromText(csvText)
+                } catch (_: Exception) { }
+
+                withContext(Dispatchers.Main) {
+                    fileName = name
+                    dropboxDictName = name
+                    hasUnsavedChanges = false
+                    wordCount = store.wordCount()
+                    dropboxHasPendingUpload = false
+                    searchText = ""
+                    results = emptyList()
+                    changelogVersion++
+                    post("Dropboxから辞書を読み込みました")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Dropbox ローカルキャッシュ保存（タスクキル対策）
+    // ------------------------------------------------------------------
+
+    private fun dropboxCacheFile(): File =
+        File(getApplication<Application>().filesDir, "dropbox_dict_cache.json")
+
+    /** アプリ強制終了に備えてローカルキャッシュへ保存する */
+    private fun saveToDropboxLocalCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                dropboxCacheFile().writeText(store.toJsonString())
+                changelog.flush()
+                prefs.dropboxHasPendingUpload = true
+                withContext(Dispatchers.Main) {
+                    hasUnsavedChanges = false
+                    dropboxHasPendingUpload = true
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    /** 起動時に Dropbox キャッシュを復元する */
+    private fun restoreDropboxCache() {
+        val dictPath = prefs.dropboxDictPath ?: return
+        val dictName = prefs.dropboxDictName ?: return
+        val cache = dropboxCacheFile()
+        if (!cache.exists()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                store.loadFromString(cache.readText())
+                engine.rebuild()
+                changelog.setDictionary("dropbox:$dictPath")
+                val hasPending = prefs.dropboxHasPendingUpload
+                withContext(Dispatchers.Main) {
+                    fileName = dictName
+                    dropboxDictName = dictName
+                    hasUnsavedChanges = false
+                    wordCount = store.wordCount()
+                    dropboxHasPendingUpload = hasPending
+                    if (hasPending) post("ローカルキャッシュを復元しました（Dropboxへの未同期があります）")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("キャッシュ復元エラー: ${e.message}") }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Dropbox へアップロード
+    // ------------------------------------------------------------------
+
+    /** 辞書 + 更新履歴を Dropbox へアップロードする */
+    fun uploadToDropbox() {
+        val dictPath = prefs.dropboxDictPath ?: run {
+            post("Dropboxの辞書ファイルが選択されていません")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidAccessToken()
+
+                // 辞書 JSON をアップロード
+                val dictText = store.toJsonString()
+                dropboxClient.uploadFile(token, dictPath, dictText)
+                dropboxCacheFile().writeText(dictText)
+
+                // changelog を flush してアップロード
+                changelog.flush()
+                val changelogText = changelog.exportCsvText()
+                val changelogPath = prefs.dropboxChangelogPath
+                if (changelogPath != null && changelogText.isNotBlank()) {
+                    val csvWithHeader = if (changelogText.startsWith(ChangelogStore.HEADER)) {
+                        changelogText
+                    } else {
+                        ChangelogStore.HEADER + "\n" + changelogText
+                    }
+                    dropboxClient.uploadFile(token, changelogPath, csvWithHeader)
+                }
+
+                prefs.dropboxHasPendingUpload = false
+                withContext(Dispatchers.Main) {
+                    hasUnsavedChanges = false
+                    dropboxHasPendingUpload = false
+                    changelogVersion++
+                    post("Dropboxに保存しました")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("Dropboxへの保存エラー: ${e.message}") }
+            }
+        }
+    }
+
+    /** Dropbox 上の最新ファイルを再読み込みする */
+    fun reloadFromDropbox() {
+        val dictPath = prefs.dropboxDictPath ?: run {
+            post("Dropboxの辞書ファイルが選択されていません")
+            return
+        }
+        val dictName = prefs.dropboxDictName ?: return
+        openFromDropbox(dictPath, dictName)
     }
 
     // ------------------------------------------------------------------
@@ -269,7 +665,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         searchJob = viewModelScope.launch(Dispatchers.Default) {
-            delay(80) // 入力デバウンス
+            delay(80)
             val r = engine.search(searchMode, searchScope, text)
             withContext(Dispatchers.Main) { results = r }
         }
@@ -361,13 +757,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (isNew) emptyList()
             else engine.lookup(id)?.let { DictionaryStore.relationsOf(it) } ?: emptyList()
 
-        // contents（発音記号を先頭に）
         val contentsArr = JSONArray()
         if (draft.pronunciation.trim().isNotEmpty()) {
             contentsArr.put(JSONObject().put("title", Const.PRONUNCIATION_TITLE).put("text", draft.pronunciation.trim()))
         }
         for (c in draft.contents) {
-            // タイトルは固定（語法/文化/用例/語源）なので、本文が空のセクションは保存しない
             if (c.text.trim().isEmpty()) continue
             contentsArr.put(JSONObject().put("title", c.title.trim()).put("text", c.text))
         }
@@ -421,14 +815,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             word.put("contents", contentsArr)
             word.put("variations", variationsArr)
             word.put("relations", relationsArr)
-            // 見出し語が変わった場合、他の単語の関係に記録された form を更新
-            if (oldForm != form) {
-                updateRelationFormsEverywhere(id, form)
-            }
+            if (oldForm != form) updateRelationFormsEverywhere(id, form)
             changelog.addEntry("CHANGE", form, if (oldForm != form) "旧: $oldForm" else "")
         }
 
-        // 対照関係の同期
         syncReciprocalRelations(
             selfId = id,
             selfForm = form,
@@ -460,7 +850,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         new: Set<Pair<String, Int>>,
         newRelationList: List<DraftRelation>
     ) {
-        // 追加された関係 → 相手側に対照関係を追加
         for ((title, targetId) in new - old) {
             val reciprocal = Const.RECIPROCAL_MAP[title] ?: continue
             val target = engine.lookup(targetId) ?: store.findById(targetId) ?: continue
@@ -480,7 +869,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
-        // 削除された関係 → 相手側の対照関係を削除
         for ((title, targetId) in old - new) {
             val reciprocal = Const.RECIPROCAL_MAP[title] ?: continue
             val target = engine.lookup(targetId) ?: store.findById(targetId) ?: continue
@@ -503,7 +891,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val word = engine.lookup(id) ?: return
         val form = DictionaryStore.formOf(word)
         store.removeWordById(id)
-        // 参照の除去
         for (w in store.wordList()) {
             val rels = w.optJSONArray("relations") ?: continue
             var i = 0
@@ -549,9 +936,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun loadIdyerFontFamily() {
         val f = idyerFontFile()
         idyerFontFamily = if (f.exists()) {
-            try {
-                FontFamily(Typeface.createFromFile(f))
-            } catch (e: Exception) { null }
+            try { FontFamily(Typeface.createFromFile(f)) } catch (e: Exception) { null }
         } else null
     }
 
@@ -582,7 +967,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             post("先に辞書ファイルを開いてください。")
             return
         }
-        // 正規表現の妥当性チェック
         if (ignoredPattern.isNotEmpty()) {
             try { Regex(ignoredPattern) } catch (e: Exception) {
                 post("無視パターンが正しい正規表現ではありません: ${e.message}")
@@ -595,7 +979,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ------------------------------------------------------------------
-    // 更新履歴エクスポート・外部CSV連携
+    // 更新履歴エクスポート・外部CSV連携（ローカルモード）
     // ------------------------------------------------------------------
 
     fun exportChangelog(uri: Uri) {
@@ -603,7 +987,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val text = changelog.exportCsvText()
                 val resolver = getApplication<Application>().contentResolver
-                resolver.let { SafIo.writeText(it, uri, text) }
+                SafIo.writeText(resolver, uri, text)
                 withContext(Dispatchers.Main) { post("更新履歴をエクスポートしました") }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { post("エクスポートエラー: ${e.message}") }
@@ -611,11 +995,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * 手動配置した「辞書名_changelog.csv」を連携する。
-     * 永続権限を取得するため、以後は辞書保存（自動上書き保存を含む）の
-     * たびにこのCSVへ自動で追記される。
-     */
     fun linkChangelogCsv(uri: Uri) {
         if (!store.isLoaded) {
             post("先に辞書ファイルを開いてください。")
@@ -641,21 +1020,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 外部CSVとの連携を解除する（以後はアプリ内部に保存） */
     fun unlinkChangelogCsv() {
         changelog.unlinkExternalCsv()
         changelogVersion++
         post("連携を解除しました。以後はアプリ内部に保存されます。")
     }
 
-    /** アプリ内部の更新履歴をすべて削除する */
     fun clearChangelogHistory() {
         changelog.clearInternal()
         changelogVersion++
         post("更新履歴を削除しました")
     }
 
-    /** 連携中の外部CSVの表示名（未連携なら null） */
     fun changelogLinkedName(): String? =
         changelog.linkedUri()?.let {
             try { queryDisplayName(it) } catch (e: Exception) { it.lastPathSegment }

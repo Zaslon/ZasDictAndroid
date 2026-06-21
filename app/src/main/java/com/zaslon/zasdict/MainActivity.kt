@@ -1,5 +1,6 @@
 package com.zaslon.zasdict
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -58,6 +59,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Dropbox OAuth2 リダイレクト URI を受け取る（launchMode="singleTop" で呼ばれる） */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val uri = intent.data ?: return
+        if (uri.scheme == "zasdict" && uri.host == "dropbox-auth") {
+            val code = uri.getQueryParameter("code") ?: return
+            MainViewModel.pendingDropboxAuthCode.value = code
+        }
+    }
+
     /** 音量キーを画面スクロールに割り当てる（処理されなかった場合は通常の音量操作） */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
@@ -74,7 +85,6 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // ViewModel からのメッセージを Snackbar で表示
     LaunchedEffect(vm.message) {
         vm.message?.let {
             snackbarHostState.showSnackbar(it)
@@ -82,7 +92,6 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
         }
     }
 
-    // 名前を付けて保存で更新履歴CSVの連携が外れた場合、新しいCSVの選択を促す
     if (vm.promptRelinkChangelog) {
         AlertDialog(
             onDismissRequest = { vm.dismissRelinkPrompt() },
@@ -107,7 +116,6 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
         )
     }
 
-    // E-inkモードでは画面遷移アニメーションを完全に無効化する
     val eink = vm.einkMode
     NavHost(
         navController = navController,

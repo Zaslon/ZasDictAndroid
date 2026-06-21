@@ -160,6 +160,12 @@ class ChangelogStore(private val context: Context) {
         }
     }
 
+    /** Dropboxからダウンロードしたテキストを内部ファイルに書き込む（pendingEntriesは保持） */
+    fun loadFromText(csvText: String) {
+        val f = internalFile() ?: return
+        if (csvText.isNotBlank()) f.writeText(csvText)
+    }
+
     fun exists(): Boolean {
         if (isExternalLinked()) return true
         return internalFile()?.exists() == true
@@ -238,6 +244,6 @@ class ChangelogStore(private val context: Context) {
     }
 
     companion object {
-        private const val HEADER = "timestamp,type,form,details"
+        const val HEADER = "timestamp,type,form,details"
     }
 }

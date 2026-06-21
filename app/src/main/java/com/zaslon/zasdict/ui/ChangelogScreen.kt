@@ -39,26 +39,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
 /**
- * 更新履歴画面（changelog.py の ChangelogViewerWidget に相当）。
- * 履歴はアプリ内部に辞書ごとのCSVとして保持され、エクスポート可能。
+ * 更新履歴画面。ローカル/Dropboxモードで表示内容を切り替える。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
 
     val einkMode = LocalEinkMode.current
+    val isDropbox = vm.storageMode == StorageMode.DROPBOX
 
-    // 音量キーで履歴リストをスクロール
     val listState = rememberLazyListState()
     VolumeScrollEffect(listState)
-
     val einkScrollConnection = rememberEinkNestedScrollConnection(listState)
 
-    // 連携・保存のたびに再読込する
-    val entries = remember(vm.changelogVersion) { vm.changelog.readAll().reversed() } // 新しい順
+    val entries = remember(vm.changelogVersion) { vm.changelog.readAll().reversed() }
     val pending = vm.changelog.pendingEntries
     val linkedName = remember(vm.changelogVersion) { vm.changelogLinkedName() }
     val isExternalLinked = remember(vm.changelogVersion) { vm.changelog.isExternalLinked() }
@@ -69,7 +67,6 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { vm.exportChangelog(it) } }
 
-    // 手動配置した 辞書名_changelog.csv を選択して連携する
     val linkLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.linkChangelogCsv(it) } }
@@ -104,48 +101,87 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
 
-            // 外部CSV連携カード
+            // ----------------------------------------------------------
+            // 連携情報カード
+            // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                 Column(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (linkedName != null) {
+                    if (isDropbox) {
+                        // Dropboxモード：Dropboxパスを表示
+                        val changelogPath = vm.prefs.dropboxChangelogPath
                         Text(
-                            text = "連携中: $linkedName",
+                            text = "Dropboxモード",
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "辞書の保存（自動上書き保存を含む）と連動して、このCSVへ自動で追記されます。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = { vm.unlinkChangelogCsv() }) {
-                            Text("連携を解除（アプリ内部保存に戻す）")
+                        if (changelogPath != null) {
+                            Text(
+                                text = "Dropbox上の更新履歴: $changelogPath",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "「Dropboxに保存」を実行すると辞書と一緒に更新履歴もDropboxへアップロードされます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "辞書ファイルを開くと更新履歴のパスが自動設定されます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(onClick = { vm.openDropboxBrowserForChangelog() }) {
+                            Text(if (changelogPath != null) "保存先を変更" else "保存先を設定")
+                        }
+                        if (vm.dropboxHasPendingUpload && pending.isEmpty()) {
+                            OutlinedButton(onClick = { vm.uploadToDropbox() }) {
+                                Text("Dropboxに保存（更新履歴を同期）")
+                            }
                         }
                     } else {
-                        Text(
-                            text = "外部CSVとの連携",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = "辞書ファイルと同じ場所に「辞書名_changelog.csv」を手動で配置した場合、" +
-                                "下のボタンから選択すると読み込めます。連携後は辞書の保存" +
-                                "（自動上書き保存を含む）と連動してCSVへ自動で追記されます。" +
-                                "アプリ内部の既存履歴は連携時にCSVへ移行されます。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(onClick = {
-                            linkLauncher.launch(arrayOf(
-                                "text/csv",
-                                "text/comma-separated-values",
-                                "text/plain",
-                                "*/*"
-                            ))
-                        }) {
-                            Text("CSVファイルを選択して連携")
+                        // ローカルモード：外部CSV連携
+                        if (linkedName != null) {
+                            Text(
+                                text = "連携中: $linkedName",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "辞書の保存（自動上書き保存を含む）と連動して、このCSVへ自動で追記されます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(onClick = { vm.unlinkChangelogCsv() }) {
+                                Text("連携を解除（アプリ内部保存に戻す）")
+                            }
+                        } else {
+                            Text(
+                                text = "外部CSVとの連携",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Text(
+                                text = "辞書ファイルと同じ場所に「辞書名_changelog.csv」を手動で配置した場合、" +
+                                    "下のボタンから選択すると読み込めます。連携後は辞書の保存" +
+                                    "（自動上書き保存を含む）と連動してCSVへ自動で追記されます。" +
+                                    "アプリ内部の既存履歴は連携時にCSVへ移行されます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(onClick = {
+                                linkLauncher.launch(arrayOf(
+                                    "text/csv",
+                                    "text/comma-separated-values",
+                                    "text/plain",
+                                    "*/*"
+                                ))
+                            }) {
+                                Text("CSVファイルを選択して連携")
+                            }
                         }
                     }
                 }
@@ -187,6 +223,21 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                 }
             }
         }
+    }
+
+    if (vm.dropboxBrowserTarget == "changelog") {
+        DropboxFileBrowserDialog(
+            entries = vm.dropboxBrowserEntries,
+            currentPath = vm.dropboxBrowserPath,
+            isLoading = vm.dropboxBrowserLoading,
+            error = vm.dropboxBrowserError,
+            fileFilter = { it.endsWith(".csv", ignoreCase = true) },
+            onSelect = { path, _ -> vm.selectDropboxChangelogPath(path) },
+            onDismiss = { vm.dismissDropboxBrowser() },
+            onNavigate = { path -> vm.dropboxNavigateTo(path) },
+            onNavigateUp = { vm.dropboxNavigateUp() },
+            onSelectFolder = { folderPath -> vm.selectDropboxChangelogFolder(folderPath) }
+        )
     }
 
     if (showClearDialog) {

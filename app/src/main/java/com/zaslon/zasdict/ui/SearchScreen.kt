@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Divider
@@ -53,6 +54,7 @@ import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.data.DictionaryStore
+import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import org.json.JSONObject
@@ -69,24 +71,37 @@ fun SearchScreen(
     var deleteConfirmFor by remember { mutableStateOf<JSONObject?>(null) }
 
     val einkMode = LocalEinkMode.current
+    val isDropbox = vm.storageMode == StorageMode.DROPBOX
 
-    // 音量キーで結果リストをスクロール
     val resultListState = rememberLazyListState()
     VolumeScrollEffect(resultListState)
-
     val einkScrollConnection = rememberEinkNestedScrollConnection(resultListState)
 
-    // ファイルピッカー（OTM-json を開く）
+    // ローカルモード用ランチャー
     val openLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.openDictionary(it) } }
 
-    // 名前を付けて保存
     val saveAsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri -> uri?.let { vm.saveAs(it) } }
 
     val baseFontSize = MaterialTheme.typography.bodyLarge.fontSize * vm.fontScale
+
+    // Dropboxブラウザダイアログ
+    if (vm.dropboxBrowserTarget == "dict") {
+        DropboxFileBrowserDialog(
+            entries = vm.dropboxBrowserEntries,
+            currentPath = vm.dropboxBrowserPath,
+            isLoading = vm.dropboxBrowserLoading,
+            error = vm.dropboxBrowserError,
+            fileFilter = { it.endsWith(".json", ignoreCase = true) },
+            onSelect = { path, name -> vm.openFromDropbox(path, name) },
+            onDismiss = { vm.dismissDropboxBrowser() },
+            onNavigate = { path -> vm.dropboxNavigateTo(path) },
+            onNavigateUp = { vm.dropboxNavigateUp() }
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -111,6 +126,16 @@ fun SearchScreen(
                     }
                 },
                 actions = {
+                    // Dropboxモード：未同期インジケータ
+                    if (isDropbox && vm.dropboxHasPendingUpload) {
+                        IconButton(onClick = { vm.uploadToDropbox() }) {
+                            Icon(
+                                Icons.Default.CloudUpload,
+                                contentDescription = "Dropboxに保存",
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
                     }
@@ -118,20 +143,37 @@ fun SearchScreen(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
-                        DropdownMenuItem(text = { Text("開く") }, onClick = {
-                            menuExpanded = false
-                            openLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
-                        })
-                        DropdownMenuItem(text = { Text("上書き保存") }, onClick = {
-                            menuExpanded = false
-                            if (!vm.saveFile()) {
+                        if (isDropbox) {
+                            // Dropboxモードのメニュー
+                            DropdownMenuItem(text = { Text("Dropboxから開く") }, onClick = {
+                                menuExpanded = false
+                                vm.openDropboxBrowser()
+                            })
+                            DropdownMenuItem(text = { Text("Dropboxに保存") }, onClick = {
+                                menuExpanded = false
+                                vm.uploadToDropbox()
+                            })
+                            DropdownMenuItem(text = { Text("Dropboxから再読込") }, onClick = {
+                                menuExpanded = false
+                                vm.reloadFromDropbox()
+                            })
+                        } else {
+                            // ローカルモードのメニュー
+                            DropdownMenuItem(text = { Text("開く") }, onClick = {
+                                menuExpanded = false
+                                openLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+                            })
+                            DropdownMenuItem(text = { Text("上書き保存") }, onClick = {
+                                menuExpanded = false
+                                if (!vm.saveFile()) {
+                                    saveAsLauncher.launch(vm.fileName ?: "dictionary.json")
+                                }
+                            })
+                            DropdownMenuItem(text = { Text("名前を付けて保存") }, onClick = {
+                                menuExpanded = false
                                 saveAsLauncher.launch(vm.fileName ?: "dictionary.json")
-                            }
-                        })
-                        DropdownMenuItem(text = { Text("名前を付けて保存") }, onClick = {
-                            menuExpanded = false
-                            saveAsLauncher.launch(vm.fileName ?: "dictionary.json")
-                        })
+                            })
+                        }
                         DropdownMenuItem(text = { Text("更新履歴") }, onClick = {
                             menuExpanded = false
                             navController.navigate(Routes.CHANGELOG)
@@ -183,12 +225,6 @@ fun SearchScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 検索欄
-            // 高さが変動しないように、
-            // 1) プレースホルダーと入力文字に同一のスタイル（明示的な行高込み）を使い、
-            // 2) クリアボタンは常に配置して空のときは透明化し、
-            // 3) 行高＋上下パディングより少し高い最低高さを固定する
-            //    （プレースホルダー消失時に計測高さが一瞬縮むのを防ぐ）
             val searchTextStyle = TextStyle(
                 fontSize = baseFontSize,
                 lineHeight = baseFontSize * 1.4f,
@@ -196,7 +232,6 @@ fun SearchScreen(
             )
             val density = LocalDensity.current
             val minSearchFieldHeight = remember(baseFontSize, density) {
-                // 行高(sp→dp) + テキストフィールドの上下パディング相当(32dp) + 余裕(4dp)
                 val lineHeightDp = with(density) { (baseFontSize * 1.4f).toDp() }
                 maxOf(56.dp, lineHeightDp + 36.dp)
             }
@@ -223,7 +258,6 @@ fun SearchScreen(
                 }
             )
 
-            // 検索モード・スコープ
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -254,7 +288,6 @@ fun SearchScreen(
                 }
             }
 
-            // 結果リスト（同音異義語には番号を付ける）
             val displayItems = remember(vm.results) {
                 val seen = mutableMapOf<String, Int>()
                 vm.results.map { word ->
@@ -311,7 +344,6 @@ fun SearchScreen(
                                 )
                             }
                         }
-                        // 長押しコンテキストメニュー（右クリック相当）
                         DropdownMenu(
                             expanded = contextMenuFor == id,
                             onDismissRequest = { contextMenuFor = null }
@@ -338,7 +370,6 @@ fun SearchScreen(
         }
     }
 
-    // 削除確認ダイアログ
     deleteConfirmFor?.let { word ->
         DeleteConfirmDialog(
             form = DictionaryStore.formOf(word),

@@ -12,47 +12,57 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import kotlin.math.roundToInt
 
 /**
- * 環境設定画面（PreferencesDialog に相当）。
- * モバイルではウィンドウサイズ・UIフォント選択は不要なため、
- * フォントサイズ倍率・自動保存・Heksaフォントの設定を提供する。
+ * 環境設定画面。ローカル/Dropboxのストレージモード選択と各種設定を提供する。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: MainViewModel, navController: NavController) {
 
     val einkMode = LocalEinkMode.current
+    val context = LocalContext.current
 
-    // 音量キーでスクロール
     val scrollState = rememberScrollState()
     VolumeScrollEffect(scrollState)
-
     val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
     val fontPickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importIdyerFont(it) } }
+
+    var dropboxAppKeyInput by remember { mutableStateOf(vm.prefs.dropboxAppKey) }
 
     Scaffold(
         topBar = {
@@ -70,10 +80,108 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .let { if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState) else it.verticalScroll(scrollState) }
+                .let {
+                    if (einkMode) it.nestedScroll(einkScrollConnection).verticalScroll(scrollState)
+                    else it.verticalScroll(scrollState)
+                }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+
+            // ----------------------------------------------------------
+            // ストレージモード
+            // ----------------------------------------------------------
+            ZasCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ストレージモード", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "辞書ファイルの読み書き先を選択します。Dropboxモードでは変更はローカルに保存され、手動でDropboxに同期します。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = vm.storageMode == StorageMode.LOCAL,
+                            onClick = {
+                                if (vm.storageMode != StorageMode.LOCAL)
+                                    vm.updateStorageMode(StorageMode.LOCAL)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) { Text("ローカル") }
+                        SegmentedButton(
+                            selected = vm.storageMode == StorageMode.DROPBOX,
+                            onClick = {
+                                if (vm.storageMode != StorageMode.DROPBOX)
+                                    vm.updateStorageMode(StorageMode.DROPBOX)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) { Text("Dropbox") }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------------
+            // Dropbox 設定（Dropboxモード時のみ表示）
+            // ----------------------------------------------------------
+            if (vm.storageMode == StorageMode.DROPBOX) {
+                ZasCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Dropbox 連携設定", style = MaterialTheme.typography.titleSmall)
+
+                        if (vm.dropboxConnected) {
+                            Text(
+                                "接続済み${if (!vm.dropboxDisplayName.isNullOrEmpty()) "：${vm.dropboxDisplayName}" else ""}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (!vm.dropboxDictName.isNullOrEmpty()) {
+                                Text(
+                                    "辞書ファイル: ${vm.dropboxDictName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (vm.dropboxHasPendingUpload) {
+                                Text(
+                                    "ローカルキャッシュにDropboxへ未同期の変更があります",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            TextButton(onClick = { vm.disconnectDropbox() }) {
+                                Text("接続を解除", color = MaterialTheme.colorScheme.error)
+                            }
+                        } else {
+                            Text(
+                                "Dropbox Developer Console でアプリを作成し、App Key を入力してください。" +
+                                "Redirect URI には「zasdict://dropbox-auth」を登録してください。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = dropboxAppKeyInput,
+                                onValueChange = { dropboxAppKeyInput = it },
+                                label = { Text("App Key") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = {
+                                    vm.updateDropboxAppKey(dropboxAppKeyInput)
+                                    vm.launchDropboxAuth(context)
+                                },
+                                enabled = dropboxAppKeyInput.isNotBlank()
+                            ) {
+                                Text("Dropboxに接続する")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------------
+            // フォントサイズ
+            // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("フォントサイズ", style = MaterialTheme.typography.titleSmall)
@@ -94,6 +202,9 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                 }
             }
 
+            // ----------------------------------------------------------
+            // E-inkモード
+            // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -111,6 +222,9 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                 }
             }
 
+            // ----------------------------------------------------------
+            // 自動上書き保存
+            // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -119,7 +233,10 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("自動上書き保存を有効にする", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "編集のたびに辞書ファイルへ自動保存します",
+                            if (vm.storageMode == StorageMode.DROPBOX)
+                                "編集のたびにローカルキャッシュへ自動保存します（Dropboxへのアップロードは手動）"
+                            else
+                                "編集のたびに辞書ファイルへ自動保存します",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -128,6 +245,9 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                 }
             }
 
+            // ----------------------------------------------------------
+            // Heksa フォント
+            // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(

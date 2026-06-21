@@ -44,4 +44,64 @@ class Prefs(context: Context) {
     var searchScope: String
         get() = sp.getString("search_scope", "見出し語・訳語") ?: "見出し語・訳語"
         set(value) = sp.edit().putString("search_scope", value).apply()
+
+    // ------------------------------------------------------------------
+    // ストレージモード
+    // ------------------------------------------------------------------
+
+    var storageMode: StorageMode
+        get() = StorageMode.entries.find { it.name == sp.getString("storage_mode", "LOCAL") }
+            ?: StorageMode.LOCAL
+        set(value) = sp.edit().putString("storage_mode", value.name).apply()
+
+    // ------------------------------------------------------------------
+    // Dropbox 認証情報
+    // ------------------------------------------------------------------
+
+    var dropboxAppKey: String
+        get() = sp.getString("dropbox_app_key", "") ?: ""
+        set(value) = sp.edit().putString("dropbox_app_key", value).apply()
+
+    var dropboxAccessToken: String?
+        get() = sp.getString("dropbox_access_token", null)
+        set(value) = sp.edit().putString("dropbox_access_token", value).apply()
+
+    var dropboxRefreshToken: String?
+        get() = sp.getString("dropbox_refresh_token", null)
+        set(value) = sp.edit().putString("dropbox_refresh_token", value).apply()
+
+    /** アクセストークンの有効期限（エポックミリ秒） */
+    var dropboxTokenExpiry: Long
+        get() = sp.getLong("dropbox_token_expiry", 0L)
+        set(value) = sp.edit().putLong("dropbox_token_expiry", value).apply()
+
+    var dropboxDisplayName: String?
+        get() = sp.getString("dropbox_display_name", null)
+        set(value) = sp.edit().putString("dropbox_display_name", value).apply()
+
+    // ------------------------------------------------------------------
+    // Dropbox ファイルパス
+    // ------------------------------------------------------------------
+
+    /** Dropbox上の辞書JSONファイルのパス（例: /zasdict/dictionary.json） */
+    var dropboxDictPath: String?
+        get() = sp.getString("dropbox_dict_path", null)
+        set(value) = sp.edit().putString("dropbox_dict_path", value).apply()
+
+    var dropboxDictName: String?
+        get() = sp.getString("dropbox_dict_name", null)
+        set(value) = sp.edit().putString("dropbox_dict_name", value).apply()
+
+    /** Dropbox上のchangelog CSVパス（辞書パスから自動生成） */
+    var dropboxChangelogPath: String?
+        get() = sp.getString("dropbox_changelog_path", null)
+        set(value) = sp.edit().putString("dropbox_changelog_path", value).apply()
+
+    /**
+     * ローカルキャッシュにDropboxへ未アップロードの変更があるか。
+     * アプリが強制終了されてもこのフラグで未同期を検知できる。
+     */
+    var dropboxHasPendingUpload: Boolean
+        get() = sp.getBoolean("dropbox_pending_upload", false)
+        set(value) = sp.edit().putBoolean("dropbox_pending_upload", value).apply()
 }
