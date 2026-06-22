@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import com.zaslon.zasdict.data.ChangelogStore
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.data.DropboxApiClient
+import com.zaslon.zasdict.data.GitHubApiClient
 import com.zaslon.zasdict.data.Prefs
 import com.zaslon.zasdict.data.SafIo
 import com.zaslon.zasdict.data.SearchEngine
@@ -57,6 +58,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val changelog = ChangelogStore(app)
 
     private val dropboxClient = DropboxApiClient()
+    private val githubClient = GitHubApiClient()
 
     // ------------------------------------------------------------------
     // UI状態
@@ -134,6 +136,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var dropboxBrowserError by mutableStateOf<String?>(null)
         private set
 
+    // ------------------------------------------------------------------
+    // GitHub 状態
+    // ------------------------------------------------------------------
+
+    var githubConnected by mutableStateOf(prefs.githubDisplayName != null)
+        private set
+    var githubDisplayName by mutableStateOf(prefs.githubDisplayName)
+        private set
+    var githubDictName by mutableStateOf(prefs.githubDictName)
+        private set
+    var githubHasPendingUpload by mutableStateOf(prefs.githubHasPendingUpload)
+        private set
+
+    var githubBrowserTarget by mutableStateOf<String?>(null)
+        private set
+    var githubBrowserEntries by mutableStateOf<List<GitHubApiClient.FileEntry>>(emptyList())
+        private set
+    var githubBrowserPath by mutableStateOf("")
+        private set
+    var githubBrowserLoading by mutableStateOf(false)
+        private set
+    var githubBrowserError by mutableStateOf<String?>(null)
+        private set
+
     companion object {
         /** MainActivity から OAuth2 コールバックのコードを受け取るチャンネル */
         val pendingDropboxAuthCode = MutableStateFlow<String?>(null)
@@ -166,9 +192,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     private fun restoreLastDictionary() {
-        if (storageMode == StorageMode.DROPBOX) {
-            restoreDropboxCache()
-            return
+        when (storageMode) {
+            StorageMode.DROPBOX -> { restoreDropboxCache(); return }
+            StorageMode.GITHUB -> { restoreGitHubCache(); return }
+            else -> {}
         }
         val uriString = prefs.lastDictionaryUri ?: return
         val uri = Uri.parse(uriString)
@@ -285,7 +312,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun autoSaveIfEnabled() {
         when (storageMode) {
             StorageMode.LOCAL -> if (autoSave && currentUri != null) saveFile()
-            StorageMode.DROPBOX -> if (prefs.dropboxDictPath != null) saveToDropboxLocalCache()
+            StorageMode.DROPBOX -> if (autoSave && prefs.dropboxDictPath != null) saveToDropboxLocalCache()
+            StorageMode.GITHUB -> if (autoSave && prefs.githubDictPath != null) saveToGitHubLocalCache()
         }
     }
 
@@ -314,7 +342,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         changelog.setDictionary(null)
         // 切替先の辞書を自動復元
         restoreLastDictionary()
-        post("${if (mode == StorageMode.LOCAL) "ローカル" else "Dropbox"}モードに切り替えました")
+        post("${when (mode) { StorageMode.LOCAL -> "ローカル"; StorageMode.DROPBOX -> "Dropbox"; StorageMode.GITHUB -> "GitHub" }}モードに切り替えました")
     }
 
     /** Dropbox OAuth2 PKCE 認証フローをブラウザで開始する */
@@ -634,6 +662,297 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val dictName = prefs.dropboxDictName ?: return
         openFromDropbox(dictPath, dictName)
+    }
+
+    // ------------------------------------------------------------------
+    // GitHub 操作
+    // ------------------------------------------------------------------
+
+    /** トークン・オーナー・リポジトリを保存して接続を確認する */
+    fun connectGitHub(token: String, owner: String, repo: String, branch: String) {
+        val t = token.trim(); val o = owner.trim(); val r = repo.trim(); val b = branch.trim().ifEmpty { "main" }
+        if (t.isEmpty() || o.isEmpty() || r.isEmpty()) {
+            post("トークン、オーナー、リポジトリを入力してください")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val name = githubClient.getCurrentUser(t)
+                prefs.githubToken = t
+                prefs.githubOwner = o
+                prefs.githubRepo = r
+                prefs.githubBranch = b
+                prefs.githubDisplayName = name.ifEmpty { o }
+                withContext(Dispatchers.Main) {
+                    githubConnected = true
+                    githubDisplayName = prefs.githubDisplayName
+                    post("GitHubに接続しました（$o/$r）")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("GitHub接続エラー: ${e.message}") }
+            }
+        }
+    }
+
+    /** GitHub 接続を解除する */
+    fun disconnectGitHub() {
+        prefs.githubToken = null
+        prefs.githubOwner = null
+        prefs.githubRepo = null
+        prefs.githubDisplayName = null
+        prefs.githubDictPath = null
+        prefs.githubDictName = null
+        prefs.githubChangelogPath = null
+        prefs.githubHasPendingUpload = false
+        githubConnected = false
+        githubDisplayName = null
+        githubDictName = null
+        githubHasPendingUpload = false
+        post("GitHub接続を解除しました")
+    }
+
+    // ------------------------------------------------------------------
+    // GitHub ファイルブラウザ
+    // ------------------------------------------------------------------
+
+    fun openGitHubBrowser() {
+        if (!githubConnected) { post("先にGitHubに接続してください"); return }
+        githubBrowserTarget = "dict"
+        githubBrowserPath = ""
+        loadGitHubFolder("")
+    }
+
+    fun openGitHubBrowserForChangelog() {
+        if (!githubConnected) { post("先にGitHubに接続してください"); return }
+        val startPath = prefs.githubChangelogPath
+            ?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
+            ?: prefs.githubDictPath?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
+            ?: ""
+        githubBrowserTarget = "changelog"
+        githubBrowserPath = startPath
+        loadGitHubFolder(startPath)
+    }
+
+    fun selectGitHubChangelogPath(path: String) {
+        prefs.githubChangelogPath = path
+        githubBrowserTarget = null
+        val token = prefs.githubToken ?: return
+        val owner = prefs.githubOwner ?: return
+        val repo = prefs.githubRepo ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val content = githubClient.getFileContent(token, owner, repo, path)
+                changelog.loadFromText(content.text)
+            } catch (_: Exception) { }
+            withContext(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を変更しました: $path")
+            }
+        }
+    }
+
+    fun selectGitHubChangelogFolder(folderPath: String) {
+        val dictBaseName = (prefs.githubDictName ?: "dictionary").removeSuffix(".json")
+        val csvPath = if (folderPath.isEmpty()) "${dictBaseName}_changelog.csv"
+                      else "$folderPath/${dictBaseName}_changelog.csv"
+        prefs.githubChangelogPath = csvPath
+        githubBrowserTarget = null
+        val token = prefs.githubToken ?: run {
+            viewModelScope.launch(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を設定しました: $csvPath")
+            }
+            return
+        }
+        val owner = prefs.githubOwner ?: return
+        val repo = prefs.githubRepo ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val content = githubClient.getFileContent(token, owner, repo, csvPath)
+                changelog.loadFromText(content.text)
+            } catch (_: Exception) { }
+            withContext(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を設定しました: $csvPath")
+            }
+        }
+    }
+
+    fun dismissGitHubBrowser() { githubBrowserTarget = null }
+
+    fun gitHubNavigateTo(path: String) {
+        githubBrowserPath = path
+        loadGitHubFolder(path)
+    }
+
+    fun gitHubNavigateUp() {
+        val parent = githubBrowserPath.substringBeforeLast("/", "")
+        githubBrowserPath = parent
+        loadGitHubFolder(parent)
+    }
+
+    private fun loadGitHubFolder(path: String) {
+        val token = prefs.githubToken ?: return
+        val owner = prefs.githubOwner ?: return
+        val repo = prefs.githubRepo ?: return
+        githubBrowserLoading = true
+        githubBrowserError = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val entries = githubClient.getContents(token, owner, repo, path)
+                withContext(Dispatchers.Main) {
+                    githubBrowserEntries = entries
+                    githubBrowserLoading = false
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    githubBrowserError = e.message
+                    githubBrowserLoading = false
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // GitHub からファイルを開く
+    // ------------------------------------------------------------------
+
+    fun openFromGitHub(path: String, name: String) {
+        githubBrowserTarget = null
+        val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
+        val owner = prefs.githubOwner ?: return
+        val repo = prefs.githubRepo ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val fileContent = githubClient.getFileContent(token, owner, repo, path)
+                store.loadFromString(fileContent.text)
+                engine.rebuild()
+
+                gitHubCacheFile().writeText(fileContent.text)
+
+                val changelogPath = path.removeSuffix(".json") + "_changelog.csv"
+                prefs.githubDictPath = path
+                prefs.githubDictName = name
+                prefs.githubChangelogPath = changelogPath
+                prefs.githubHasPendingUpload = false
+                changelog.setDictionary("github:$path")
+
+                try {
+                    val csvContent = githubClient.getFileContent(token, owner, repo, changelogPath)
+                    changelog.loadFromText(csvContent.text)
+                } catch (_: Exception) { }
+
+                withContext(Dispatchers.Main) {
+                    fileName = name
+                    githubDictName = name
+                    hasUnsavedChanges = false
+                    wordCount = store.wordCount()
+                    githubHasPendingUpload = false
+                    searchText = ""
+                    results = emptyList()
+                    changelogVersion++
+                    post("GitHubから辞書を読み込みました")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // GitHub ローカルキャッシュ
+    // ------------------------------------------------------------------
+
+    private fun gitHubCacheFile(): File =
+        File(getApplication<Application>().filesDir, "github_dict_cache.json")
+
+    private fun saveToGitHubLocalCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                gitHubCacheFile().writeText(store.toJsonString())
+                changelog.flush()
+                prefs.githubHasPendingUpload = true
+                withContext(Dispatchers.Main) {
+                    hasUnsavedChanges = false
+                    githubHasPendingUpload = true
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    private fun restoreGitHubCache() {
+        val dictPath = prefs.githubDictPath ?: return
+        val dictName = prefs.githubDictName ?: return
+        val cache = gitHubCacheFile()
+        if (!cache.exists()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                store.loadFromString(cache.readText())
+                engine.rebuild()
+                changelog.setDictionary("github:$dictPath")
+                val hasPending = prefs.githubHasPendingUpload
+                withContext(Dispatchers.Main) {
+                    fileName = dictName
+                    githubDictName = dictName
+                    hasUnsavedChanges = false
+                    wordCount = store.wordCount()
+                    githubHasPendingUpload = hasPending
+                    if (hasPending) post("ローカルキャッシュを復元しました（GitHubへの未同期があります）")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("キャッシュ復元エラー: ${e.message}") }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // GitHub へアップロード（コミット作成）
+    // ------------------------------------------------------------------
+
+    /** 辞書 + 更新履歴を GitHub へ1コミットとしてまとめてアップロードする */
+    fun uploadToGitHub(commitMessage: String = "Update Dictionary (Android)") {
+        val dictPath = prefs.githubDictPath ?: run { post("GitHubの辞書ファイルが選択されていません"); return }
+        val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
+        val owner = prefs.githubOwner ?: return
+        val repo = prefs.githubRepo ?: return
+        val branch = prefs.githubBranch
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dictText = store.toJsonString()
+
+                changelog.flush()
+                val changelogText = changelog.exportCsvText()
+                val changelogPath = prefs.githubChangelogPath
+
+                // 辞書と更新履歴を1コミットにまとめる（Git Data API）
+                val filesToCommit = mutableListOf(GitHubApiClient.FileChange(dictPath, dictText))
+                if (changelogPath != null && changelogText.isNotBlank()) {
+                    val csvWithHeader = if (changelogText.startsWith(ChangelogStore.HEADER)) changelogText
+                                        else ChangelogStore.HEADER + "\n" + changelogText
+                    filesToCommit.add(GitHubApiClient.FileChange(changelogPath, csvWithHeader))
+                }
+
+                githubClient.commitFiles(token, owner, repo, branch, filesToCommit, commitMessage)
+                gitHubCacheFile().writeText(dictText)
+
+                prefs.githubHasPendingUpload = false
+                withContext(Dispatchers.Main) {
+                    hasUnsavedChanges = false
+                    githubHasPendingUpload = false
+                    changelogVersion++
+                    post("GitHubにコミットしました")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("GitHubへの保存エラー: ${e.message}") }
+            }
+        }
+    }
+
+    /** GitHub 上の最新ファイルを再読み込みする */
+    fun reloadFromGitHub() {
+        val dictPath = prefs.githubDictPath ?: run { post("GitHubの辞書ファイルが選択されていません"); return }
+        val dictName = prefs.githubDictName ?: return
+        openFromGitHub(dictPath, dictName)
     }
 
     // ------------------------------------------------------------------

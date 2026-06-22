@@ -104,4 +104,50 @@ class Prefs(context: Context) {
     var dropboxHasPendingUpload: Boolean
         get() = sp.getBoolean("dropbox_pending_upload", false)
         set(value) = sp.edit().putBoolean("dropbox_pending_upload", value).apply()
+
+    // ------------------------------------------------------------------
+    // GitHub 認証情報
+    // ------------------------------------------------------------------
+
+    /** Personal Access Token（repo スコープが必要） */
+    var githubToken: String?
+        get() = sp.getString("github_token", null)
+        set(value) = sp.edit().putString("github_token", value).apply()
+
+    var githubOwner: String?
+        get() = sp.getString("github_owner", null)
+        set(value) = sp.edit().putString("github_owner", value).apply()
+
+    var githubRepo: String?
+        get() = sp.getString("github_repo", null)
+        set(value) = sp.edit().putString("github_repo", value).apply()
+
+    /** 対象ブランチ（デフォルト: main） */
+    var githubBranch: String
+        get() = sp.getString("github_branch", "main") ?: "main"
+        set(value) = sp.edit().putString("github_branch", value).apply()
+
+    var githubDisplayName: String?
+        get() = sp.getString("github_display_name", null)
+        set(value) = sp.edit().putString("github_display_name", value).apply()
+
+    // ------------------------------------------------------------------
+    // GitHub ファイルパス
+    // ------------------------------------------------------------------
+
+    var githubDictPath: String?
+        get() = sp.getString("github_dict_path", null)
+        set(value) = sp.edit().putString("github_dict_path", value).apply()
+
+    var githubDictName: String?
+        get() = sp.getString("github_dict_name", null)
+        set(value) = sp.edit().putString("github_dict_name", value).apply()
+
+    var githubChangelogPath: String?
+        get() = sp.getString("github_changelog_path", null)
+        set(value) = sp.edit().putString("github_changelog_path", value).apply()
+
+    var githubHasPendingUpload: Boolean
+        get() = sp.getBoolean("github_pending_upload", false)
+        set(value) = sp.edit().putBoolean("github_pending_upload", value).apply()
 }

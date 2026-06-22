@@ -51,6 +51,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
 
     val einkMode = LocalEinkMode.current
     val isDropbox = vm.storageMode == StorageMode.DROPBOX
+    val isGitHub = vm.storageMode == StorageMode.GITHUB
 
     val listState = rememberLazyListState()
     VolumeScrollEffect(listState)
@@ -109,7 +110,41 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (isDropbox) {
+                    if (isGitHub) {
+                        // GitHubモード：GitHubパスを表示
+                        val changelogPath = vm.prefs.githubChangelogPath
+                        Text(
+                            text = "GitHubモード",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (changelogPath != null) {
+                            Text(
+                                text = "リポジトリ上の更新履歴: $changelogPath",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "「GitHubにコミット」を実行すると辞書と一緒に更新履歴もコミットされます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "辞書ファイルを開くと更新履歴のパスが自動設定されます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(onClick = { vm.openGitHubBrowserForChangelog() }) {
+                            Text(if (changelogPath != null) "保存先を変更" else "保存先を設定")
+                        }
+                        if (vm.githubHasPendingUpload && pending.isEmpty()) {
+                            OutlinedButton(onClick = { vm.uploadToGitHub() }) {
+                                Text("GitHubにコミット（更新履歴を同期）")
+                            }
+                        }
+                    } else if (isDropbox) {
                         // Dropboxモード：Dropboxパスを表示
                         val changelogPath = vm.prefs.dropboxChangelogPath
                         Text(
@@ -237,6 +272,22 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
             onNavigate = { path -> vm.dropboxNavigateTo(path) },
             onNavigateUp = { vm.dropboxNavigateUp() },
             onSelectFolder = { folderPath -> vm.selectDropboxChangelogFolder(folderPath) }
+        )
+    }
+
+    if (vm.githubBrowserTarget == "changelog") {
+        GitHubFileBrowserDialog(
+            entries = vm.githubBrowserEntries,
+            currentPath = vm.githubBrowserPath,
+            repoLabel = "${vm.prefs.githubOwner}/${vm.prefs.githubRepo}",
+            isLoading = vm.githubBrowserLoading,
+            error = vm.githubBrowserError,
+            fileFilter = { it.endsWith(".csv", ignoreCase = true) },
+            onSelect = { path, _ -> vm.selectGitHubChangelogPath(path) },
+            onDismiss = { vm.dismissGitHubBrowser() },
+            onNavigate = { path -> vm.gitHubNavigateTo(path) },
+            onNavigateUp = { vm.gitHubNavigateUp() },
+            onSelectFolder = { folderPath -> vm.selectGitHubChangelogFolder(folderPath) }
         )
     }
 

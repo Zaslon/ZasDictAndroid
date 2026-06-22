@@ -72,6 +72,7 @@ fun SearchScreen(
 
     val einkMode = LocalEinkMode.current
     val isDropbox = vm.storageMode == StorageMode.DROPBOX
+    val isGitHub = vm.storageMode == StorageMode.GITHUB
 
     val resultListState = rememberLazyListState()
     VolumeScrollEffect(resultListState)
@@ -103,6 +104,22 @@ fun SearchScreen(
         )
     }
 
+    // GitHubブラウザダイアログ
+    if (vm.githubBrowserTarget == "dict") {
+        GitHubFileBrowserDialog(
+            entries = vm.githubBrowserEntries,
+            currentPath = vm.githubBrowserPath,
+            repoLabel = "${vm.prefs.githubOwner}/${vm.prefs.githubRepo}",
+            isLoading = vm.githubBrowserLoading,
+            error = vm.githubBrowserError,
+            fileFilter = { it.endsWith(".json", ignoreCase = true) },
+            onSelect = { path, name -> vm.openFromGitHub(path, name) },
+            onDismiss = { vm.dismissGitHubBrowser() },
+            onNavigate = { path -> vm.gitHubNavigateTo(path) },
+            onNavigateUp = { vm.gitHubNavigateUp() }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -126,12 +143,21 @@ fun SearchScreen(
                     }
                 },
                 actions = {
-                    // Dropboxモード：未同期インジケータ
+                    // クラウドモード：未同期インジケータ
                     if (isDropbox && vm.dropboxHasPendingUpload) {
                         IconButton(onClick = { vm.uploadToDropbox() }) {
                             Icon(
                                 Icons.Default.CloudUpload,
                                 contentDescription = "Dropboxに保存",
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
+                    if (isGitHub && vm.githubHasPendingUpload) {
+                        IconButton(onClick = { vm.uploadToGitHub() }) {
+                            Icon(
+                                Icons.Default.CloudUpload,
+                                contentDescription = "GitHubにコミット",
                                 tint = MaterialTheme.colorScheme.tertiary
                             )
                         }
@@ -156,6 +182,20 @@ fun SearchScreen(
                             DropdownMenuItem(text = { Text("Dropboxから再読込") }, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromDropbox()
+                            })
+                        } else if (isGitHub) {
+                            // GitHubモードのメニュー
+                            DropdownMenuItem(text = { Text("GitHubから開く") }, onClick = {
+                                menuExpanded = false
+                                vm.openGitHubBrowser()
+                            })
+                            DropdownMenuItem(text = { Text("GitHubにコミット") }, onClick = {
+                                menuExpanded = false
+                                vm.uploadToGitHub()
+                            })
+                            DropdownMenuItem(text = { Text("GitHubから再読込") }, onClick = {
+                                menuExpanded = false
+                                vm.reloadFromGitHub()
                             })
                         } else {
                             // ローカルモードのメニュー

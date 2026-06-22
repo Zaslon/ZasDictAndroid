@@ -63,6 +63,10 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
     ) { uri -> uri?.let { vm.importIdyerFont(it) } }
 
     var dropboxAppKeyInput by remember { mutableStateOf(vm.prefs.dropboxAppKey) }
+    var githubTokenInput by remember { mutableStateOf(vm.prefs.githubToken ?: "") }
+    var githubOwnerInput by remember { mutableStateOf(vm.prefs.githubOwner ?: "") }
+    var githubRepoInput by remember { mutableStateOf(vm.prefs.githubRepo ?: "") }
+    var githubBranchInput by remember { mutableStateOf(vm.prefs.githubBranch) }
 
     Scaffold(
         topBar = {
@@ -106,7 +110,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                                 if (vm.storageMode != StorageMode.LOCAL)
                                     vm.updateStorageMode(StorageMode.LOCAL)
                             },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
                         ) { Text("ローカル") }
                         SegmentedButton(
                             selected = vm.storageMode == StorageMode.DROPBOX,
@@ -114,8 +118,16 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                                 if (vm.storageMode != StorageMode.DROPBOX)
                                     vm.updateStorageMode(StorageMode.DROPBOX)
                             },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
                         ) { Text("Dropbox") }
+                        SegmentedButton(
+                            selected = vm.storageMode == StorageMode.GITHUB,
+                            onClick = {
+                                if (vm.storageMode != StorageMode.GITHUB)
+                                    vm.updateStorageMode(StorageMode.GITHUB)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) { Text("GitHub") }
                     }
                 }
             }
@@ -180,6 +192,91 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
             }
 
             // ----------------------------------------------------------
+            // GitHub 設定（GitHubモード時のみ表示）
+            // ----------------------------------------------------------
+            if (vm.storageMode == StorageMode.GITHUB) {
+                ZasCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("GitHub 連携設定", style = MaterialTheme.typography.titleSmall)
+
+                        if (vm.githubConnected) {
+                            Text(
+                                "接続済み：${vm.githubDisplayName ?: ""}（${vm.prefs.githubOwner}/${vm.prefs.githubRepo}）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (!vm.githubDictName.isNullOrEmpty()) {
+                                Text(
+                                    "辞書ファイル: ${vm.githubDictName}（ブランチ: ${vm.prefs.githubBranch}）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (vm.githubHasPendingUpload) {
+                                Text(
+                                    "ローカルキャッシュにGitHubへ未同期の変更があります",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            TextButton(onClick = { vm.disconnectGitHub() }) {
+                                Text("接続を解除", color = MaterialTheme.colorScheme.error)
+                            }
+                        } else {
+                            Text(
+                                "GitHubのPersonal Access Tokenを入力してください。Tokenにはリポジトリへの読み書き権限（Contents: Read and Write）が必要です。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = githubTokenInput,
+                                onValueChange = { githubTokenInput = it },
+                                label = { Text("Personal Access Token") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = githubOwnerInput,
+                                onValueChange = { githubOwnerInput = it },
+                                label = { Text("オーナー（ユーザー名 / Org名）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = githubRepoInput,
+                                onValueChange = { githubRepoInput = it },
+                                label = { Text("リポジトリ名") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = githubBranchInput,
+                                onValueChange = { githubBranchInput = it },
+                                label = { Text("ブランチ（省略時: main）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = {
+                                    vm.connectGitHub(
+                                        githubTokenInput,
+                                        githubOwnerInput,
+                                        githubRepoInput,
+                                        githubBranchInput
+                                    )
+                                },
+                                enabled = githubTokenInput.isNotBlank() &&
+                                          githubOwnerInput.isNotBlank() &&
+                                          githubRepoInput.isNotBlank()
+                            ) {
+                                Text("GitHubに接続する")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------------
             // フォントサイズ
             // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
@@ -233,10 +330,11 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("自動上書き保存を有効にする", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            if (vm.storageMode == StorageMode.DROPBOX)
-                                "編集のたびにローカルキャッシュへ自動保存します（Dropboxへのアップロードは手動）"
-                            else
-                                "編集のたびに辞書ファイルへ自動保存します",
+                            when (vm.storageMode) {
+                                StorageMode.DROPBOX -> "編集のたびにローカルキャッシュへ自動保存します（Dropboxへのアップロードは手動）"
+                                StorageMode.GITHUB -> "編集のたびにローカルキャッシュへ自動保存します（GitHubへのコミットは手動）"
+                                else -> "編集のたびに辞書ファイルへ自動保存します"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
