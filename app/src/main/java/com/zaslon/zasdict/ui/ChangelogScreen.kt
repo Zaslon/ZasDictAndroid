@@ -52,6 +52,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
     val einkMode = LocalEinkMode.current
     val isDropbox = vm.storageMode == StorageMode.DROPBOX
     val isGitHub = vm.storageMode == StorageMode.GITHUB
+    val isBox = vm.storageMode == StorageMode.BOX
 
     val listState = rememberLazyListState()
     VolumeScrollEffect(listState)
@@ -110,7 +111,46 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (isGitHub) {
+                    if (isBox) {
+                        // Boxモード：Box上のファイル情報を表示
+                        val changelogFileId = vm.prefs.boxChangelogFileId
+                        val dictName = vm.prefs.boxDictName
+                        Text(
+                            text = "Boxモード",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (dictName != null) {
+                            val csvName = "${dictName.removeSuffix(".json")}_changelog.csv"
+                            Text(
+                                text = if (changelogFileId != null) "Box上の更新履歴: $csvName"
+                                       else "更新履歴ファイルはまだBoxにありません（保存時に自動作成されます）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (changelogFileId != null) {
+                                Text(
+                                    text = "「Boxに保存」を実行すると辞書と一緒に更新履歴もBoxへアップロードされます。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "辞書ファイルを開くと更新履歴のファイルが自動検索されます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(onClick = { vm.openBoxBrowserForChangelog() }) {
+                            Text(if (changelogFileId != null) "保存先を変更" else "保存先を設定")
+                        }
+                        if (vm.boxHasPendingUpload) {
+                            OutlinedButton(onClick = { vm.uploadToBox() }) {
+                                Text("Boxに保存（更新履歴を同期）")
+                            }
+                        }
+                    } else if (isGitHub) {
                         // GitHubモード：GitHubパスを表示
                         val changelogPath = vm.prefs.githubChangelogPath
                         Text(
@@ -288,6 +328,23 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
             onNavigate = { path -> vm.gitHubNavigateTo(path) },
             onNavigateUp = { vm.gitHubNavigateUp() },
             onSelectFolder = { folderPath -> vm.selectGitHubChangelogFolder(folderPath) }
+        )
+    }
+
+    if (vm.boxBrowserTarget == "changelog") {
+        BoxFileBrowserDialog(
+            entries = vm.boxBrowserEntries,
+            folderName = vm.boxBrowserFolderName,
+            isRoot = vm.boxBrowserFolderStack.isEmpty() && vm.boxBrowserFolderId == "0",
+            isLoading = vm.boxBrowserLoading,
+            error = vm.boxBrowserError,
+            fileFilter = { it.endsWith(".csv", ignoreCase = true) },
+            onSelect = { id, name -> vm.selectBoxChangelogFile(id, name) },
+            onDismiss = { vm.dismissBoxBrowser() },
+            onNavigate = { id, name -> vm.boxNavigateTo(id, name) },
+            onNavigateUp = { vm.boxNavigateUp() },
+            onSelectFolder = { id, name -> vm.selectBoxChangelogFolder(id, name) },
+            currentFolderId = vm.boxBrowserFolderId
         )
     }
 

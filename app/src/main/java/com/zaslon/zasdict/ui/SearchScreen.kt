@@ -73,6 +73,7 @@ fun SearchScreen(
     val einkMode = LocalEinkMode.current
     val isDropbox = vm.storageMode == StorageMode.DROPBOX
     val isGitHub = vm.storageMode == StorageMode.GITHUB
+    val isBox = vm.storageMode == StorageMode.BOX
 
     val resultListState = rememberLazyListState()
     VolumeScrollEffect(resultListState)
@@ -120,6 +121,23 @@ fun SearchScreen(
         )
     }
 
+    // Boxブラウザダイアログ
+    if (vm.boxBrowserTarget == "dict") {
+        BoxFileBrowserDialog(
+            entries = vm.boxBrowserEntries,
+            folderName = vm.boxBrowserFolderName,
+            isRoot = vm.boxBrowserFolderStack.isEmpty() && vm.boxBrowserFolderId == "0",
+            isLoading = vm.boxBrowserLoading,
+            error = vm.boxBrowserError,
+            fileFilter = { it.endsWith(".json", ignoreCase = true) },
+            onSelect = { id, name -> vm.openFromBox(id, name) },
+            onDismiss = { vm.dismissBoxBrowser() },
+            onNavigate = { id, name -> vm.boxNavigateTo(id, name) },
+            onNavigateUp = { vm.boxNavigateUp() },
+            currentFolderId = vm.boxBrowserFolderId
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -162,6 +180,15 @@ fun SearchScreen(
                             )
                         }
                     }
+                    if (isBox && vm.boxHasPendingUpload) {
+                        IconButton(onClick = { vm.uploadToBox() }) {
+                            Icon(
+                                Icons.Default.CloudUpload,
+                                contentDescription = "Boxに保存",
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
                     }
@@ -196,6 +223,20 @@ fun SearchScreen(
                             DropdownMenuItem(text = { Text("GitHubから再読込") }, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromGitHub()
+                            })
+                        } else if (isBox) {
+                            // Boxモードのメニュー
+                            DropdownMenuItem(text = { Text("Boxから開く") }, onClick = {
+                                menuExpanded = false
+                                vm.openBoxBrowser()
+                            })
+                            DropdownMenuItem(text = { Text("Boxに保存") }, onClick = {
+                                menuExpanded = false
+                                vm.uploadToBox()
+                            })
+                            DropdownMenuItem(text = { Text("Boxから再読込") }, onClick = {
+                                menuExpanded = false
+                                vm.reloadFromBox()
                             })
                         } else {
                             // ローカルモードのメニュー

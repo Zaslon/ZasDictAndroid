@@ -67,6 +67,8 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
     var githubOwnerInput by remember { mutableStateOf(vm.prefs.githubOwner ?: "") }
     var githubRepoInput by remember { mutableStateOf(vm.prefs.githubRepo ?: "") }
     var githubBranchInput by remember { mutableStateOf(vm.prefs.githubBranch) }
+    var boxClientIdInput by remember { mutableStateOf(vm.prefs.boxClientId) }
+    var boxClientSecretInput by remember { mutableStateOf(vm.prefs.boxClientSecret) }
 
     Scaffold(
         topBar = {
@@ -99,7 +101,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ストレージモード", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "辞書ファイルの読み書き先を選択します。Dropboxモードでは変更はローカルに保存され、手動でDropboxに同期します。",
+                        "辞書ファイルの読み書き先を選択します。クラウドモードでは変更はローカルに保存され、手動でクラウドに同期します。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -110,7 +112,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                                 if (vm.storageMode != StorageMode.LOCAL)
                                     vm.updateStorageMode(StorageMode.LOCAL)
                             },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 4)
                         ) { Text("ローカル") }
                         SegmentedButton(
                             selected = vm.storageMode == StorageMode.DROPBOX,
@@ -118,7 +120,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                                 if (vm.storageMode != StorageMode.DROPBOX)
                                     vm.updateStorageMode(StorageMode.DROPBOX)
                             },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 4)
                         ) { Text("Dropbox") }
                         SegmentedButton(
                             selected = vm.storageMode == StorageMode.GITHUB,
@@ -126,8 +128,16 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                                 if (vm.storageMode != StorageMode.GITHUB)
                                     vm.updateStorageMode(StorageMode.GITHUB)
                             },
-                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 4)
                         ) { Text("GitHub") }
+                        SegmentedButton(
+                            selected = vm.storageMode == StorageMode.BOX,
+                            onClick = {
+                                if (vm.storageMode != StorageMode.BOX)
+                                    vm.updateStorageMode(StorageMode.BOX)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 3, count = 4)
+                        ) { Text("Box") }
                     }
                 }
             }
@@ -277,6 +287,73 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
             }
 
             // ----------------------------------------------------------
+            // Box 設定（Boxモード時のみ表示）
+            // ----------------------------------------------------------
+            if (vm.storageMode == StorageMode.BOX) {
+                ZasCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Box 連携設定", style = MaterialTheme.typography.titleSmall)
+
+                        if (vm.boxConnected) {
+                            Text(
+                                "接続済み${if (!vm.boxDisplayName.isNullOrEmpty()) "：${vm.boxDisplayName}" else ""}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (!vm.boxDictName.isNullOrEmpty()) {
+                                Text(
+                                    "辞書ファイル: ${vm.boxDictName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (vm.boxHasPendingUpload) {
+                                Text(
+                                    "ローカルキャッシュにBoxへ未同期の変更があります",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            TextButton(onClick = { vm.disconnectBox() }) {
+                                Text("接続を解除", color = MaterialTheme.colorScheme.error)
+                            }
+                        } else {
+                            Text(
+                                "Box Developer Console でアプリを作成し、Client ID と Client Secret を入力してください。" +
+                                "Redirect URI には「zasdict://box-auth」を登録してください。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = boxClientIdInput,
+                                onValueChange = { boxClientIdInput = it },
+                                label = { Text("Client ID") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = boxClientSecretInput,
+                                onValueChange = { boxClientSecretInput = it },
+                                label = { Text("Client Secret") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = {
+                                    vm.updateBoxClientId(boxClientIdInput)
+                                    vm.updateBoxClientSecret(boxClientSecretInput)
+                                    vm.launchBoxAuth(context)
+                                },
+                                enabled = boxClientIdInput.isNotBlank() && boxClientSecretInput.isNotBlank()
+                            ) {
+                                Text("Boxに接続する")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------------
             // フォントサイズ
             // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
@@ -333,6 +410,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                             when (vm.storageMode) {
                                 StorageMode.DROPBOX -> "編集のたびにローカルキャッシュへ自動保存します（Dropboxへのアップロードは手動）"
                                 StorageMode.GITHUB -> "編集のたびにローカルキャッシュへ自動保存します（GitHubへのコミットは手動）"
+                                StorageMode.BOX -> "編集のたびにローカルキャッシュへ自動保存します（Boxへのアップロードは手動）"
                                 else -> "編集のたびに辞書ファイルへ自動保存します"
                             },
                             style = MaterialTheme.typography.bodySmall,

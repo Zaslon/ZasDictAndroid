@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.zaslon.zasdict.data.BoxApiClient
 import com.zaslon.zasdict.data.ChangelogStore
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.data.DropboxApiClient
@@ -59,6 +60,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val dropboxClient = DropboxApiClient()
     private val githubClient = GitHubApiClient()
+    private val boxClient = BoxApiClient()
 
     // ------------------------------------------------------------------
     // UI状態
@@ -160,11 +162,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var githubBrowserError by mutableStateOf<String?>(null)
         private set
 
+    // ------------------------------------------------------------------
+    // Box 状態
+    // ------------------------------------------------------------------
+
+    var boxConnected by mutableStateOf(prefs.boxRefreshToken != null)
+        private set
+    var boxDisplayName by mutableStateOf(prefs.boxDisplayName)
+        private set
+    var boxDictName by mutableStateOf(prefs.boxDictName)
+        private set
+    var boxHasPendingUpload by mutableStateOf(prefs.boxHasPendingUpload)
+        private set
+
+    var boxBrowserTarget by mutableStateOf<String?>(null)
+        private set
+    var boxBrowserEntries by mutableStateOf<List<BoxApiClient.FileEntry>>(emptyList())
+        private set
+    var boxBrowserFolderId by mutableStateOf("0")
+        private set
+    var boxBrowserFolderName by mutableStateOf("Box")
+        private set
+    var boxBrowserFolderStack by mutableStateOf<List<Pair<String, String>>>(emptyList())
+        private set
+    var boxBrowserLoading by mutableStateOf(false)
+        private set
+    var boxBrowserError by mutableStateOf<String?>(null)
+        private set
+
     companion object {
         /** MainActivity から OAuth2 コールバックのコードを受け取るチャンネル */
         val pendingDropboxAuthCode = MutableStateFlow<String?>(null)
         /** PKCE フロー中の code_verifier（認可〜トークン交換まで保持） */
         var pkceVerifier: String? = null
+        val pendingBoxAuthCode = MutableStateFlow<String?>(null)
+        var boxPkceVerifier: String? = null
     }
 
     init {
@@ -175,6 +207,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (code != null) {
                     pendingDropboxAuthCode.value = null
                     handleDropboxAuthCode(code)
+                }
+            }
+        }
+        viewModelScope.launch {
+            pendingBoxAuthCode.collect { code ->
+                if (code != null) {
+                    pendingBoxAuthCode.value = null
+                    handleBoxAuthCode(code)
                 }
             }
         }
@@ -195,6 +235,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when (storageMode) {
             StorageMode.DROPBOX -> { restoreDropboxCache(); return }
             StorageMode.GITHUB -> { restoreGitHubCache(); return }
+            StorageMode.BOX -> { restoreBoxCache(); return }
             else -> {}
         }
         val uriString = prefs.lastDictionaryUri ?: return
@@ -314,6 +355,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             StorageMode.LOCAL -> if (autoSave && currentUri != null) saveFile()
             StorageMode.DROPBOX -> if (autoSave && prefs.dropboxDictPath != null) saveToDropboxLocalCache()
             StorageMode.GITHUB -> if (autoSave && prefs.githubDictPath != null) saveToGitHubLocalCache()
+            StorageMode.BOX -> if (autoSave && prefs.boxDictFileId != null) saveToBoxLocalCache()
         }
     }
 
@@ -342,7 +384,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         changelog.setDictionary(null)
         // 切替先の辞書を自動復元
         restoreLastDictionary()
-        post("${when (mode) { StorageMode.LOCAL -> "ローカル"; StorageMode.DROPBOX -> "Dropbox"; StorageMode.GITHUB -> "GitHub" }}モードに切り替えました")
+        post("${when (mode) { StorageMode.LOCAL -> "ローカル"; StorageMode.DROPBOX -> "Dropbox"; StorageMode.GITHUB -> "GitHub"; StorageMode.BOX -> "Box" }}モードに切り替えました")
     }
 
     /** Dropbox OAuth2 PKCE 認証フローをブラウザで開始する */
@@ -953,6 +995,326 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val dictPath = prefs.githubDictPath ?: run { post("GitHubの辞書ファイルが選択されていません"); return }
         val dictName = prefs.githubDictName ?: return
         openFromGitHub(dictPath, dictName)
+    }
+
+    // ------------------------------------------------------------------
+    // Box 操作
+    // ------------------------------------------------------------------
+
+    fun updateBoxClientId(id: String) { prefs.boxClientId = id.trim() }
+    fun updateBoxClientSecret(secret: String) { prefs.boxClientSecret = secret.trim() }
+
+    fun launchBoxAuth(context: Context) {
+        val clientId = prefs.boxClientId
+        if (clientId.isEmpty()) { post("Client IDを入力してください"); return }
+        val verifier = boxClient.generatePkceVerifier()
+        boxPkceVerifier = verifier
+        val challenge = boxClient.generatePkceChallenge(verifier)
+        val url = boxClient.buildAuthUrl(clientId, challenge)
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
+    private fun handleBoxAuthCode(code: String) {
+        val verifier = boxPkceVerifier ?: run { post("認証エラー: PKCE verifierが見つかりません"); return }
+        boxPkceVerifier = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = boxClient.exchangeCodeForToken(code, verifier, prefs.boxClientId, prefs.boxClientSecret)
+                prefs.boxAccessToken = result.accessToken
+                if (result.refreshToken != null) prefs.boxRefreshToken = result.refreshToken
+                prefs.boxTokenExpiry = System.currentTimeMillis() + result.expiresIn * 1000L
+                val name = boxClient.getCurrentUser(result.accessToken)
+                prefs.boxDisplayName = name
+                withContext(Dispatchers.Main) {
+                    boxConnected = true
+                    boxDisplayName = name
+                    post("Boxに接続しました${if (name.isNotEmpty()) "（$name）" else ""}")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("Box接続エラー: ${e.message}") }
+            }
+        }
+    }
+
+    fun disconnectBox() {
+        prefs.boxAccessToken = null
+        prefs.boxRefreshToken = null
+        prefs.boxTokenExpiry = 0L
+        prefs.boxDisplayName = null
+        prefs.boxDictFileId = null
+        prefs.boxDictFolderId = null
+        prefs.boxDictName = null
+        prefs.boxChangelogFileId = null
+        prefs.boxChangelogFolderId = null
+        prefs.boxHasPendingUpload = false
+        boxConnected = false
+        boxDisplayName = null
+        boxDictName = null
+        boxHasPendingUpload = false
+        post("Box接続を解除しました")
+    }
+
+    private suspend fun getValidBoxAccessToken(): String = withContext(Dispatchers.IO) {
+        val token = prefs.boxAccessToken ?: throw IllegalStateException("Boxに接続されていません")
+        val refreshToken = prefs.boxRefreshToken ?: throw IllegalStateException("Boxに接続されていません")
+        if (System.currentTimeMillis() < prefs.boxTokenExpiry - 300_000L) return@withContext token
+        val result = boxClient.refreshAccessToken(refreshToken, prefs.boxClientId, prefs.boxClientSecret)
+        prefs.boxAccessToken = result.accessToken
+        if (result.refreshToken != null) prefs.boxRefreshToken = result.refreshToken
+        prefs.boxTokenExpiry = System.currentTimeMillis() + result.expiresIn * 1000L
+        result.accessToken
+    }
+
+    // ------------------------------------------------------------------
+    // Box ファイルブラウザ
+    // ------------------------------------------------------------------
+
+    fun openBoxBrowser() {
+        if (!boxConnected) { post("先にBoxに接続してください"); return }
+        boxBrowserTarget = "dict"
+        boxBrowserFolderStack = emptyList()
+        boxBrowserFolderId = "0"
+        boxBrowserFolderName = "Box"
+        loadBoxFolder("0")
+    }
+
+    fun openBoxBrowserForChangelog() {
+        if (!boxConnected) { post("先にBoxに接続してください"); return }
+        val startId = prefs.boxDictFolderId ?: "0"
+        val startName = if (startId == "0") "Box" else "辞書フォルダ"
+        boxBrowserTarget = "changelog"
+        boxBrowserFolderStack = emptyList()
+        boxBrowserFolderId = startId
+        boxBrowserFolderName = startName
+        loadBoxFolder(startId)
+    }
+
+    fun selectBoxChangelogFile(fileId: String, fileName: String) {
+        prefs.boxChangelogFileId = fileId
+        boxBrowserTarget = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidBoxAccessToken()
+                val content = boxClient.downloadFile(token, fileId)
+                changelog.loadFromText(content)
+            } catch (_: Exception) { }
+            withContext(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を変更しました: $fileName")
+            }
+        }
+    }
+
+    fun selectBoxChangelogFolder(folderId: String, folderName: String) {
+        boxBrowserTarget = null
+        val dictBaseName = (prefs.boxDictName ?: "dictionary").removeSuffix(".json")
+        val csvName = "${dictBaseName}_changelog.csv"
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidBoxAccessToken()
+                val fileId = boxClient.findFileInFolder(token, folderId, csvName)
+                if (fileId != null) {
+                    try {
+                        val content = boxClient.downloadFile(token, fileId)
+                        changelog.loadFromText(content)
+                    } catch (_: Exception) { }
+                }
+                prefs.boxChangelogFileId = fileId
+                prefs.boxChangelogFolderId = folderId
+            } catch (_: Exception) { }
+            withContext(Dispatchers.Main) {
+                changelogVersion++
+                post("更新履歴の保存先を設定しました: $folderName/$csvName")
+            }
+        }
+    }
+
+    fun dismissBoxBrowser() { boxBrowserTarget = null }
+
+    fun boxNavigateTo(id: String, name: String) {
+        boxBrowserFolderStack = boxBrowserFolderStack + (boxBrowserFolderId to boxBrowserFolderName)
+        boxBrowserFolderId = id
+        boxBrowserFolderName = name
+        loadBoxFolder(id)
+    }
+
+    fun boxNavigateUp() {
+        val parent = boxBrowserFolderStack.lastOrNull() ?: return
+        boxBrowserFolderStack = boxBrowserFolderStack.dropLast(1)
+        boxBrowserFolderId = parent.first
+        boxBrowserFolderName = parent.second
+        loadBoxFolder(parent.first)
+    }
+
+    private fun loadBoxFolder(folderId: String) {
+        boxBrowserLoading = true
+        boxBrowserError = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidBoxAccessToken()
+                val entries = boxClient.listFolder(token, folderId)
+                withContext(Dispatchers.Main) {
+                    boxBrowserEntries = entries
+                    boxBrowserLoading = false
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    boxBrowserError = e.message
+                    boxBrowserLoading = false
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Box からファイルを開く
+    // ------------------------------------------------------------------
+
+    fun openFromBox(fileId: String, name: String) {
+        val folderId = boxBrowserFolderId
+        boxBrowserTarget = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidBoxAccessToken()
+                val text = boxClient.downloadFile(token, fileId)
+                store.loadFromString(text)
+                engine.rebuild()
+                boxCacheFile().writeText(text)
+
+                val dictBaseName = name.removeSuffix(".json")
+                val csvName = "${dictBaseName}_changelog.csv"
+                val changelogFileId = boxClient.findFileInFolder(token, folderId, csvName)
+
+                prefs.boxDictFileId = fileId
+                prefs.boxDictFolderId = folderId
+                prefs.boxDictName = name
+                prefs.boxChangelogFileId = changelogFileId
+                prefs.boxChangelogFolderId = folderId
+                prefs.boxHasPendingUpload = false
+                changelog.setDictionary("box:$fileId")
+
+                if (changelogFileId != null) {
+                    try {
+                        val csvText = boxClient.downloadFile(token, changelogFileId)
+                        changelog.loadFromText(csvText)
+                    } catch (_: Exception) { }
+                }
+
+                withContext(Dispatchers.Main) {
+                    fileName = name
+                    boxDictName = name
+                    hasUnsavedChanges = false
+                    wordCount = store.wordCount()
+                    boxHasPendingUpload = false
+                    searchText = ""
+                    results = emptyList()
+                    changelogVersion++
+                    post("Boxから辞書を読み込みました")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Box ローカルキャッシュ
+    // ------------------------------------------------------------------
+
+    private fun boxCacheFile(): File =
+        File(getApplication<Application>().filesDir, "box_dict_cache.json")
+
+    private fun saveToBoxLocalCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                boxCacheFile().writeText(store.toJsonString())
+                changelog.flush()
+                prefs.boxHasPendingUpload = true
+                withContext(Dispatchers.Main) {
+                    hasUnsavedChanges = false
+                    boxHasPendingUpload = true
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    private fun restoreBoxCache() {
+        val dictFileId = prefs.boxDictFileId ?: return
+        val dictName = prefs.boxDictName ?: return
+        val cache = boxCacheFile()
+        if (!cache.exists()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                store.loadFromString(cache.readText())
+                engine.rebuild()
+                changelog.setDictionary("box:$dictFileId")
+                val hasPending = prefs.boxHasPendingUpload
+                withContext(Dispatchers.Main) {
+                    fileName = dictName
+                    boxDictName = dictName
+                    hasUnsavedChanges = false
+                    wordCount = store.wordCount()
+                    boxHasPendingUpload = hasPending
+                    if (hasPending) post("ローカルキャッシュを復元しました（Boxへの未同期があります）")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("キャッシュ復元エラー: ${e.message}") }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Box へアップロード
+    // ------------------------------------------------------------------
+
+    fun uploadToBox() {
+        val dictFileId = prefs.boxDictFileId ?: run { post("Boxの辞書ファイルが選択されていません"); return }
+        val dictName = prefs.boxDictName ?: return
+        val dictFolderId = prefs.boxDictFolderId ?: "0"
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = getValidBoxAccessToken()
+                val dictText = store.toJsonString()
+
+                boxClient.updateFile(token, dictFileId, dictName, dictText)
+                boxCacheFile().writeText(dictText)
+
+                changelog.flush()
+                val changelogText = changelog.exportCsvText()
+                if (changelogText.isNotBlank()) {
+                    val csvWithHeader = if (changelogText.startsWith(ChangelogStore.HEADER)) changelogText
+                                        else ChangelogStore.HEADER + "\n" + changelogText
+                    val dictBaseName = dictName.removeSuffix(".json")
+                    val csvName = "${dictBaseName}_changelog.csv"
+                    val changelogFileId = prefs.boxChangelogFileId
+                    val changelogFolderId = prefs.boxChangelogFolderId ?: dictFolderId
+                    if (changelogFileId != null) {
+                        boxClient.updateFile(token, changelogFileId, csvName, csvWithHeader)
+                    } else {
+                        val newId = boxClient.uploadNewFile(token, changelogFolderId, csvName, csvWithHeader)
+                        prefs.boxChangelogFileId = newId
+                    }
+                }
+
+                prefs.boxHasPendingUpload = false
+                withContext(Dispatchers.Main) {
+                    hasUnsavedChanges = false
+                    boxHasPendingUpload = false
+                    changelogVersion++
+                    post("Boxに保存しました")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { post("Boxへの保存エラー: ${e.message}") }
+            }
+        }
+    }
+
+    fun reloadFromBox() {
+        val dictFileId = prefs.boxDictFileId ?: run { post("Boxの辞書ファイルが選択されていません"); return }
+        val dictName = prefs.boxDictName ?: return
+        val folderId = prefs.boxDictFolderId ?: "0"
+        boxBrowserFolderId = folderId
+        openFromBox(dictFileId, dictName)
     }
 
     // ------------------------------------------------------------------

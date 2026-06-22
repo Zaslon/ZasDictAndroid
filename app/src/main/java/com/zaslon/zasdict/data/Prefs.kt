@@ -150,4 +150,63 @@ class Prefs(context: Context) {
     var githubHasPendingUpload: Boolean
         get() = sp.getBoolean("github_pending_upload", false)
         set(value) = sp.edit().putBoolean("github_pending_upload", value).apply()
+
+    // ------------------------------------------------------------------
+    // Box 認証情報
+    // ------------------------------------------------------------------
+
+    var boxClientId: String
+        get() = sp.getString("box_client_id", "") ?: ""
+        set(value) = sp.edit().putString("box_client_id", value).apply()
+
+    var boxClientSecret: String
+        get() = sp.getString("box_client_secret", "") ?: ""
+        set(value) = sp.edit().putString("box_client_secret", value).apply()
+
+    var boxAccessToken: String?
+        get() = sp.getString("box_access_token", null)
+        set(value) = sp.edit().putString("box_access_token", value).apply()
+
+    var boxRefreshToken: String?
+        get() = sp.getString("box_refresh_token", null)
+        set(value) = sp.edit().putString("box_refresh_token", value).apply()
+
+    var boxTokenExpiry: Long
+        get() = sp.getLong("box_token_expiry", 0L)
+        set(value) = sp.edit().putLong("box_token_expiry", value).apply()
+
+    var boxDisplayName: String?
+        get() = sp.getString("box_display_name", null)
+        set(value) = sp.edit().putString("box_display_name", value).apply()
+
+    // ------------------------------------------------------------------
+    // Box ファイル情報
+    // ------------------------------------------------------------------
+
+    /** Box上の辞書ファイル ID */
+    var boxDictFileId: String?
+        get() = sp.getString("box_dict_file_id", null)
+        set(value) = sp.edit().putString("box_dict_file_id", value).apply()
+
+    /** 辞書ファイルが置かれているフォルダ ID */
+    var boxDictFolderId: String?
+        get() = sp.getString("box_dict_folder_id", null)
+        set(value) = sp.edit().putString("box_dict_folder_id", value).apply()
+
+    var boxDictName: String?
+        get() = sp.getString("box_dict_name", null)
+        set(value) = sp.edit().putString("box_dict_name", value).apply()
+
+    var boxChangelogFileId: String?
+        get() = sp.getString("box_changelog_file_id", null)
+        set(value) = sp.edit().putString("box_changelog_file_id", value).apply()
+
+    /** changelog を配置するフォルダ ID（明示的に変更されていない場合は boxDictFolderId と同じ） */
+    var boxChangelogFolderId: String?
+        get() = sp.getString("box_changelog_folder_id", null)
+        set(value) = sp.edit().putString("box_changelog_folder_id", value).apply()
+
+    var boxHasPendingUpload: Boolean
+        get() = sp.getBoolean("box_pending_upload", false)
+        set(value) = sp.edit().putBoolean("box_pending_upload", value).apply()
 }

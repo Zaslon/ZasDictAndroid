@@ -59,13 +59,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Dropbox OAuth2 リダイレクト URI を受け取る（launchMode="singleTop" で呼ばれる） */
+    /** OAuth2 リダイレクト URI を受け取る（launchMode="singleTop" で呼ばれる） */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val uri = intent.data ?: return
-        if (uri.scheme == "zasdict" && uri.host == "dropbox-auth") {
-            val code = uri.getQueryParameter("code") ?: return
-            MainViewModel.pendingDropboxAuthCode.value = code
+        when {
+            uri.scheme == "zasdict" && uri.host == "dropbox-auth" -> {
+                val code = uri.getQueryParameter("code") ?: return
+                MainViewModel.pendingDropboxAuthCode.value = code
+            }
+            uri.scheme == "zasdict" && uri.host == "box-auth" -> {
+                val code = uri.getQueryParameter("code") ?: return
+                MainViewModel.pendingBoxAuthCode.value = code
+            }
         }
     }
 
