@@ -48,7 +48,7 @@ data class DraftExample(
     val supplement: String = "",
     val tags: String = "",
     val linkedWords: List<Pair<Int, String>> = emptyList(),
-    val offerCatalog: String = "self",
+    val offerCatalog: String = Const.EXAMPLE_CATALOG_SELF,
     val offerNumber: Int = 0
 )
 
@@ -1741,8 +1741,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             zpdicOfferStatus = "APIキーが設定されていません（環境設定で登録してください）"
             return
         }
-        if (catalog.trim().isEmpty()) {
-            zpdicOfferStatus = "カタログ名を入力してください"
+        if (catalog.trim().isEmpty() || catalog.trim() == Const.EXAMPLE_CATALOG_SELF) {
+            zpdicOfferStatus = "カタログを選択してください"
             return
         }
         if (number <= 0) {
@@ -1782,8 +1782,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             zpdicListError = "APIキーが設定されていません（環境設定で登録してください）"
             return
         }
-        if (catalog.trim().isEmpty()) {
-            zpdicListError = "カタログ名を入力してください"
+        if (catalog.trim().isEmpty() || catalog.trim() == Const.EXAMPLE_CATALOG_SELF) {
+            zpdicListError = "カタログを選択してください"
             return
         }
         zpdicListLoading = true

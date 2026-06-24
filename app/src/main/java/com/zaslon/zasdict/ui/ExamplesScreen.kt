@@ -26,13 +26,17 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -61,6 +65,7 @@ import com.zaslon.zasdict.DraftExample
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.data.DictionaryStore
+import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import org.json.JSONObject
 
@@ -246,6 +251,9 @@ fun ExampleEditorScreen(
     val linkedWords = remember { draft.linkedWords.toMutableStateList() }
     var offerCatalog by remember { mutableStateOf(draft.offerCatalog) }
     var offerNumber by remember { mutableIntStateOf(draft.offerNumber) }
+    var catalogExpanded by remember { mutableStateOf(false) }
+
+    val isSelfCatalog = offerCatalog == Const.EXAMPLE_CATALOG_SELF
 
     var showWordPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -386,38 +394,67 @@ fun ExampleEditorScreen(
 
             // ----------------------------------------------------------
             SectionHeader("出典")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            val catalogLabel = Const.EXAMPLE_CATALOG_OPTIONS
+                .find { it.first == offerCatalog }?.second ?: offerCatalog
+            ExposedDropdownMenuBox(
+                expanded = catalogExpanded,
+                onExpandedChange = { catalogExpanded = it }
             ) {
                 OutlinedTextField(
-                    value = offerCatalog,
-                    onValueChange = { offerCatalog = it; vm.zpdicOfferStatus = "" },
+                    value = catalogLabel,
+                    onValueChange = {},
+                    readOnly = true,
                     label = { Text("カタログ") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = if (offerNumber == 0) "" else offerNumber.toString(),
-                    onValueChange = { v ->
-                        offerNumber = v.toIntOrNull() ?: 0
-                        vm.zpdicOfferStatus = ""
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = catalogExpanded)
                     },
-                    label = { Text("No.") },
-                    modifier = Modifier.weight(0.35f),
-                    singleLine = true
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 )
-                TextButton(
-                    onClick = { vm.fetchZpdicOffer(offerCatalog, offerNumber) },
-                    enabled = !vm.zpdicOfferFetching
-                ) { Text("照会") }
+                ExposedDropdownMenu(
+                    expanded = catalogExpanded,
+                    onDismissRequest = { catalogExpanded = false }
+                ) {
+                    Const.EXAMPLE_CATALOG_OPTIONS.forEach { (key, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                offerCatalog = key
+                                offerNumber = 0
+                                vm.zpdicOfferStatus = ""
+                                catalogExpanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            if (!isSelfCatalog) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = if (offerNumber == 0) "" else offerNumber.toString(),
+                        onValueChange = { v ->
+                            offerNumber = v.toIntOrNull() ?: 0
+                            vm.zpdicOfferStatus = ""
+                        },
+                        label = { Text("No.") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    TextButton(
+                        onClick = { vm.fetchZpdicOffer(offerCatalog, offerNumber) },
+                        enabled = !vm.zpdicOfferFetching
+                    ) { Text("照会") }
+                    TextButton(onClick = {
+                        vm.clearZpdicList()
+                        showZpdicBrowse = true
+                    }) { Text("一覧") }
+                }
                 if (vm.zpdicOfferStatus.isNotEmpty()) {
                     Text(
                         text = vm.zpdicOfferStatus,
@@ -425,21 +462,9 @@ fun ExampleEditorScreen(
                         color = if (vm.zpdicOfferStatus.startsWith("照会成功"))
                             MaterialTheme.colorScheme.primary
                         else
-                            MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    Text(
-                        text = "出典なし = \"self\" / 0",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
+                            MaterialTheme.colorScheme.error
                     )
                 }
-                TextButton(onClick = {
-                    vm.clearZpdicList()
-                    showZpdicBrowse = true
-                }) { Text("一覧") }
             }
 
             Spacer(modifier = Modifier.height(64.dp))
@@ -463,7 +488,7 @@ fun ExampleEditorScreen(
     if (showZpdicBrowse) {
         ZpdicOfferListDialog(
             vm = vm,
-            initialCatalog = offerCatalog,
+            initialCatalog = if (isSelfCatalog) "" else offerCatalog,
             onSelected = { number, trans, suppl ->
                 offerNumber = number
                 if (trans.isNotEmpty()) translation = trans
@@ -564,6 +589,7 @@ private fun WordPickerDialog(
 // ZpDIC 出典一覧ダイアログ
 // ------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ZpdicOfferListDialog(
     vm: MainViewModel,
@@ -571,11 +597,11 @@ private fun ZpdicOfferListDialog(
     onSelected: (number: Int, translation: String, supplement: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var catalog by remember {
-        mutableStateOf(
-            if (initialCatalog.isNotEmpty() && initialCatalog != "self") initialCatalog else ""
-        )
-    }
+    val apiCatalogs = Const.EXAMPLE_CATALOG_OPTIONS.filter { it.first != Const.EXAMPLE_CATALOG_SELF }
+    val defaultCatalog = apiCatalogs.find { it.first == initialCatalog }?.first
+        ?: apiCatalogs.firstOrNull()?.first ?: ""
+    var catalog by remember { mutableStateOf(defaultCatalog) }
+    var catalogExpanded by remember { mutableStateOf(false) }
     val PAGE = 50
 
     AlertDialog(
@@ -583,20 +609,48 @@ private fun ZpdicOfferListDialog(
         title = { Text("ZpDIC 出典一覧") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val catalogLabel = apiCatalogs.find { it.first == catalog }?.second ?: catalog
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = catalog,
-                        onValueChange = { catalog = it },
-                        label = { Text("カタログ名") },
-                        singleLine = true,
+                    ExposedDropdownMenuBox(
+                        expanded = catalogExpanded,
+                        onExpandedChange = { catalogExpanded = it },
                         modifier = Modifier.weight(1f)
-                    )
+                    ) {
+                        OutlinedTextField(
+                            value = catalogLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("カタログ") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = catalogExpanded)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = catalogExpanded,
+                            onDismissRequest = { catalogExpanded = false }
+                        ) {
+                            apiCatalogs.forEach { (key, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        catalog = key
+                                        catalogExpanded = false
+                                        vm.clearZpdicList()
+                                    },
+                                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                )
+                            }
+                        }
+                    }
                     TextButton(
                         onClick = { vm.loadZpdicOfferList(catalog) },
-                        enabled = !vm.zpdicListLoading && catalog.isNotBlank()
+                        enabled = !vm.zpdicListLoading && catalog.isNotEmpty()
                     ) { Text("取得") }
                 }
 

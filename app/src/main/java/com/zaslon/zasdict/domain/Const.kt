@@ -68,10 +68,20 @@ object Const {
     /** 内容欄の種類（エディタで上から順に追加ボタンとして表示。各項目は1つまで） */
     val CONTENT_TYPES = listOf("語法", "文化", "用例", "語源")
 
-    /** 例文の出典カタログ（API識別名 to 表示名） */
-    const val EXAMPLE_CATALOG_SELF = "self"
+    /** 例文の出典カタログ（API識別名 to 表示名）。末尾の「自作」は固定 */
+    const val EXAMPLE_CATALOG_SELF = "自作"
     val EXAMPLE_CATALOG_OPTIONS = listOf(
-        Pair("self", "自作"),
-        Pair("liber-eji", "Liber Eji")
+        Pair("zpdicDaily",    "zpdicDaily — 今日の例文"),
+        Pair("appleAlpha",    "appleAlpha — リンゴを食べたい 58 文"),
+        Pair("appleBeta",     "appleBeta — リンゴを食べ足りない 57 文"),
+        Pair("appleGamma",    "appleGamma — リンゴをもっと食べたい 55 文"),
+        Pair("survival",      "survival — 今日を生き抜く実用例文"),
+        Pair("weaving",       "weaving — 手袋と辞書を編む 50 文"),
+        Pair("shaleianAlpha", "shaleianAlpha — 今日のシャレイア語 I"),
+        Pair("shaleianBeta",  "shaleianBeta — 今日のシャレイア語 II"),
+        Pair("meat",          "meat — 古代の民族のためのお肉例文"),
+        Pair("arithmetic",    "arithmetic — 算数例文"),
+        Pair("adposition",    "adposition — 格や接置詞のための例文集"),
+        Pair(EXAMPLE_CATALOG_SELF, EXAMPLE_CATALOG_SELF)
     )
 }
