@@ -87,6 +87,63 @@ class DictionaryStore {
     }
 
     // ------------------------------------------------------------------
+    // 例文操作
+    // ------------------------------------------------------------------
+
+    val examples: JSONArray
+        get() {
+            if (root.optJSONArray("examples") == null) {
+                root.put("examples", JSONArray())
+            }
+            return root.getJSONArray("examples")
+        }
+
+    fun exampleList(): List<JSONObject> {
+        val arr = examples
+        val list = ArrayList<JSONObject>(arr.length())
+        for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { list.add(it) }
+        return list
+    }
+
+    fun maxExampleId(): Int {
+        val arr = examples
+        var max = 0
+        for (i in 0 until arr.length()) {
+            val id = arr.optJSONObject(i)?.optInt("id", 0) ?: 0
+            if (id > max) max = id
+        }
+        return max
+    }
+
+    fun addExample(example: JSONObject) {
+        examples.put(example)
+    }
+
+    fun updateExample(id: Int, updated: JSONObject): Boolean {
+        val arr = examples
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            if (e.optInt("id", -1) == id) {
+                arr.put(i, updated)
+                return true
+            }
+        }
+        return false
+    }
+
+    fun removeExampleById(id: Int): Boolean {
+        val arr = examples
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            if (e.optInt("id", -1) == id) {
+                arr.remove(i)
+                return true
+            }
+        }
+        return false
+    }
+
+    // ------------------------------------------------------------------
     // zpdicOnline（辞書依存設定）
     // ------------------------------------------------------------------
 

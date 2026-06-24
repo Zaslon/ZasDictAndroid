@@ -255,6 +255,10 @@ fun SearchScreen(
                                 saveAsLauncher.launch(vm.fileName ?: "dictionary.json")
                             })
                         }
+                        DropdownMenuItem(text = { Text("例文") }, onClick = {
+                            menuExpanded = false
+                            navController.navigate(Routes.EXAMPLES)
+                        })
                         DropdownMenuItem(text = { Text("更新履歴") }, onClick = {
                             menuExpanded = false
                             navController.navigate(Routes.CHANGELOG)

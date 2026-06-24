@@ -27,6 +27,8 @@ import com.zaslon.zasdict.ui.ChangelogScreen
 import com.zaslon.zasdict.ui.DetailScreen
 import com.zaslon.zasdict.ui.DictionarySettingsScreen
 import com.zaslon.zasdict.ui.EditorScreen
+import com.zaslon.zasdict.ui.ExampleEditorScreen
+import com.zaslon.zasdict.ui.ExamplesScreen
 import com.zaslon.zasdict.ui.LegendScreen
 import com.zaslon.zasdict.ui.SearchScreen
 import com.zaslon.zasdict.ui.SettingsScreen
@@ -43,6 +45,8 @@ object Routes {
     const val CHANGELOG = "changelog"
     const val SETTINGS = "settings"
     const val DICT_SETTINGS = "dictSettings"
+    const val EXAMPLES = "examples"
+    const val EXAMPLE_EDITOR = "exampleEditor"
 
     fun detail(wordId: Int) = "detail/$wordId"
     fun tools(tab: Int) = "tools/$tab"
@@ -162,6 +166,12 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
         }
         composable(Routes.DICT_SETTINGS) {
             DictionarySettingsScreen(vm, navController)
+        }
+        composable(Routes.EXAMPLES) {
+            ExamplesScreen(vm, navController, snackbarHostState)
+        }
+        composable(Routes.EXAMPLE_EDITOR) {
+            ExampleEditorScreen(vm, navController, snackbarHostState)
         }
     }
 }

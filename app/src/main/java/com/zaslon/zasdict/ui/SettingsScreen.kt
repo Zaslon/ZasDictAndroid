@@ -28,7 +28,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +73,8 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
     var githubBranchInput by remember { mutableStateOf(vm.prefs.githubBranch) }
     var boxClientIdInput by remember { mutableStateOf(vm.prefs.boxClientId) }
     var boxClientSecretInput by remember { mutableStateOf(vm.prefs.boxClientSecret) }
+    var zpdicApiKeyInput by remember { mutableStateOf("") }
+    var zpdicKeyVisible by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -458,6 +464,58 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                             fontFamily = vm.idyerFontFamily,
                             fontSize = MaterialTheme.typography.bodyLarge.fontSize * vm.fontScale
                         )
+                    }
+                }
+            }
+
+            // ----------------------------------------------------------
+            // ZpDIC Online API キー
+            // ----------------------------------------------------------
+            ZasCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ZpDIC Online APIキー", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "ZpDIC Online のAPIキーを登録すると、例文編集画面で出典の照会・一覧取得ができます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (vm.zpdicApiKeySet) {
+                        Text(
+                            "APIキー登録済み",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        TextButton(onClick = { vm.clearZpdicApiKey() }) {
+                            Text("APIキーを削除", color = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = zpdicApiKeyInput,
+                            onValueChange = { zpdicApiKeyInput = it },
+                            label = { Text("APIキー") },
+                            singleLine = true,
+                            visualTransformation = if (zpdicKeyVisible) VisualTransformation.None
+                                                   else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { zpdicKeyVisible = !zpdicKeyVisible }) {
+                                    Icon(
+                                        if (zpdicKeyVisible) Icons.Default.VisibilityOff
+                                        else Icons.Default.Visibility,
+                                        contentDescription = if (zpdicKeyVisible) "非表示" else "表示"
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                vm.saveZpdicApiKey(zpdicApiKeyInput)
+                                zpdicApiKeyInput = ""
+                            },
+                            enabled = zpdicApiKeyInput.isNotBlank()
+                        ) {
+                            Text("保存")
+                        }
                     }
                 }
             }

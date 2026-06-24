@@ -209,4 +209,14 @@ class Prefs(context: Context) {
     var boxHasPendingUpload: Boolean
         get() = sp.getBoolean("box_pending_upload", false)
         set(value) = sp.edit().putBoolean("box_pending_upload", value).apply()
+
+    // ------------------------------------------------------------------
+    // ZpDIC Online API
+    // ------------------------------------------------------------------
+
+    /** ZpDIC Online API キー（SharedPreferences に保存。リポジトリには含まれない） */
+    var zpdicApiKey: String?
+        get() = sp.getString("zpdic_api_key", null)
+        set(value) = if (value == null) sp.edit().remove("zpdic_api_key").apply()
+                     else sp.edit().putString("zpdic_api_key", value).apply()
 }

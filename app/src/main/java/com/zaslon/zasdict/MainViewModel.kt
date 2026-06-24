@@ -20,6 +20,7 @@ import com.zaslon.zasdict.data.Prefs
 import com.zaslon.zasdict.data.SafIo
 import com.zaslon.zasdict.data.SearchEngine
 import com.zaslon.zasdict.data.StorageMode
+import com.zaslon.zasdict.data.ZpdicApiClient
 import com.zaslon.zasdict.domain.Const
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +40,17 @@ data class DraftTranslation(val title: String = "名詞", val forms: String = ""
 data class DraftContent(val title: String = "", val text: String = "")
 data class DraftRelation(val title: String = "関連", val targetId: Int = -1, val targetForm: String = "")
 data class DraftVariation(val title: String = "", val form: String = "")
+
+data class DraftExample(
+    val originalId: Int? = null,
+    val sentence: String = "",
+    val translation: String = "",
+    val supplement: String = "",
+    val tags: String = "",
+    val linkedWords: List<Pair<Int, String>> = emptyList(),
+    val offerCatalog: String = "self",
+    val offerNumber: Int = 0
+)
 
 data class EditorDraft(
     val originalId: Int? = null, // null = 新規
@@ -61,6 +73,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val dropboxClient = DropboxApiClient()
     private val githubClient = GitHubApiClient()
     private val boxClient = BoxApiClient()
+    private val zpdicClient = ZpdicApiClient()
 
     // ------------------------------------------------------------------
     // UI状態
@@ -83,9 +96,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var message by mutableStateOf<String?>(null)
     var editorDraft by mutableStateOf<EditorDraft?>(null)
         private set
+    var exampleDraft by mutableStateOf<DraftExample?>(null)
+        private set
 
     /** 更新履歴画面の再読込トリガ（連携・保存のたびに増える） */
     var changelogVersion by mutableStateOf(0)
+        private set
+
+    /** 例文リスト再描画トリガ（例文の追加・編集・削除のたびに増える） */
+    var examplesVersion by mutableStateOf(0)
+        private set
+
+    // ------------------------------------------------------------------
+    // ZpDIC Online API 状態
+    // ------------------------------------------------------------------
+
+    /** APIキーが登録済みかどうか（キー本体はPrefsにのみ保持する） */
+    var zpdicApiKeySet by mutableStateOf(prefs.zpdicApiKey != null)
+        private set
+
+    /** 出典照会中フラグ */
+    var zpdicOfferFetching by mutableStateOf(false)
+        private set
+
+    /** 出典照会のステータスメッセージ（空文字 = 非表示） */
+    var zpdicOfferStatus by mutableStateOf("")
+
+    /** 照会結果（編集画面が消費して null にする） */
+    var zpdicOfferResult by mutableStateOf<ZpdicApiClient.OfferData?>(null)
+        private set
+
+    /** 出典一覧ロード中フラグ */
+    var zpdicListLoading by mutableStateOf(false)
+        private set
+
+    /** 出典一覧の取得結果 */
+    var zpdicListItems by mutableStateOf<List<ZpdicApiClient.OfferListItem>>(emptyList())
+        private set
+
+    /** 出典一覧取得のエラーメッセージ */
+    var zpdicListError by mutableStateOf<String?>(null)
         private set
 
     /** 名前を付けて保存で連携が外れた際、新しいCSVの選択を促すダイアログ表示フラグ */
@@ -381,6 +431,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         results = emptyList()
         searchText = ""
         editorDraft = null
+        exampleDraft = null
         changelog.setDictionary(null)
         // 切替先の辞書を自動復元
         restoreLastDictionary()
@@ -1565,6 +1616,212 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 } else i++
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 例文エディタ
+    // ------------------------------------------------------------------
+
+    fun startNewExample() {
+        if (!store.isLoaded) {
+            post("先に辞書ファイルを開いてください。")
+            return
+        }
+        exampleDraft = DraftExample()
+    }
+
+    fun startEditExample(id: Int) {
+        val arr = store.examples
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            if (e.optInt("id", -1) == id) {
+                exampleDraft = draftFromExample(e)
+                return
+            }
+        }
+    }
+
+    private fun draftFromExample(e: JSONObject): DraftExample {
+        val words = e.optJSONArray("words")
+        val linkedWords = if (words != null) {
+            (0 until words.length()).mapNotNull { i ->
+                val wid = words.optJSONObject(i)?.optInt("id", -1) ?: return@mapNotNull null
+                if (wid < 0) return@mapNotNull null
+                val form = store.findById(wid)?.let { DictionaryStore.formOf(it) } ?: "ID:$wid"
+                Pair(wid, form)
+            }
+        } else emptyList()
+        val offer = e.optJSONObject("offer")
+        return DraftExample(
+            originalId = e.optInt("id", -1).takeIf { it >= 0 },
+            sentence = e.optString("sentence", ""),
+            translation = e.optString("translation", ""),
+            supplement = e.optString("supplement", ""),
+            tags = e.optJSONArray("tags")?.let { ta ->
+                (0 until ta.length()).mapNotNull { ta.optString(it, null) }.joinToString(", ")
+            } ?: "",
+            linkedWords = linkedWords,
+            offerCatalog = offer?.optString("catalog", Const.EXAMPLE_CATALOG_SELF) ?: Const.EXAMPLE_CATALOG_SELF,
+            offerNumber = offer?.optInt("number", 0) ?: 0
+        )
+    }
+
+    fun discardExampleDraft() { exampleDraft = null }
+
+    fun commitExampleDraft(draft: DraftExample): Boolean {
+        val sentence = draft.sentence.trim()
+        if (sentence.isEmpty()) {
+            post("「文」を入力してください。")
+            return false
+        }
+        val isNew = draft.originalId == null
+        val id = draft.originalId ?: (store.maxExampleId() + 1)
+
+        val wordsArr = JSONArray()
+        for ((wid, _) in draft.linkedWords) wordsArr.put(JSONObject().put("id", wid))
+
+        val tagsArr = JSONArray(
+            draft.tags.split(",", "、").map { it.trim() }.filter { it.isNotEmpty() }
+        )
+
+        val obj = JSONObject()
+            .put("id", id)
+            .put("sentence", sentence)
+            .put("translation", draft.translation.trim())
+            .put("supplement", draft.supplement.trim())
+            .put("tags", tagsArr)
+            .put("words", wordsArr)
+            .put("offer", JSONObject()
+                .put("catalog", draft.offerCatalog)
+                .put("number", draft.offerNumber))
+
+        if (isNew) {
+            store.addExample(obj)
+        } else {
+            store.updateExample(id, obj)
+        }
+
+        exampleDraft = null
+        examplesVersion++
+        refreshAfterDataChange()
+        return true
+    }
+
+    fun deleteExample(id: Int) {
+        store.removeExampleById(id)
+        examplesVersion++
+        refreshAfterDataChange()
+        post("例文を削除しました")
+    }
+
+    fun exampleList(): List<JSONObject> = store.exampleList()
+
+    // ------------------------------------------------------------------
+    // ZpDIC Online API 操作
+    // ------------------------------------------------------------------
+
+    fun saveZpdicApiKey(key: String) {
+        val trimmed = key.trim()
+        prefs.zpdicApiKey = trimmed.ifEmpty { null }
+        zpdicApiKeySet = trimmed.isNotEmpty()
+        if (trimmed.isNotEmpty()) post("ZpDIC APIキーを保存しました")
+    }
+
+    fun clearZpdicApiKey() {
+        prefs.zpdicApiKey = null
+        zpdicApiKeySet = false
+        post("ZpDIC APIキーを削除しました")
+    }
+
+    fun consumeZpdicOfferResult() { zpdicOfferResult = null }
+
+    /** 出典を1件照会して結果を zpdicOfferResult に設定する */
+    fun fetchZpdicOffer(catalog: String, number: Int) {
+        val apiKey = prefs.zpdicApiKey ?: run {
+            zpdicOfferStatus = "APIキーが設定されていません（環境設定で登録してください）"
+            return
+        }
+        if (catalog.trim().isEmpty()) {
+            zpdicOfferStatus = "カタログ名を入力してください"
+            return
+        }
+        if (number <= 0) {
+            zpdicOfferStatus = "No. を入力してください"
+            return
+        }
+        zpdicOfferFetching = true
+        zpdicOfferStatus = "照会中..."
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = zpdicClient.fetchOffer(catalog.trim(), number, apiKey)
+            withContext(Dispatchers.Main) {
+                zpdicOfferFetching = false
+                when (result) {
+                    is ZpdicApiClient.Result.Success -> {
+                        zpdicOfferResult = result.data
+                        val d = result.data
+                        zpdicOfferStatus = if (d.author.isNotEmpty()) "照会成功（作者: ${d.author}）" else "照会成功"
+                    }
+                    is ZpdicApiClient.Result.Failure -> {
+                        zpdicOfferStatus = errorMessage(result.error, number)
+                        if (result.error == "auth_failed" || result.error == "api_key_non_ascii") {
+                            prefs.zpdicApiKey = null
+                            zpdicApiKeySet = false
+                        }
+                        if (result.error == "not_found") {
+                            zpdicOfferResult = ZpdicApiClient.OfferData("", "", "")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** 出典一覧を取得して zpdicListItems に設定する */
+    fun loadZpdicOfferList(catalog: String, offset: Int = 0, limit: Int = 50) {
+        val apiKey = prefs.zpdicApiKey ?: run {
+            zpdicListError = "APIキーが設定されていません（環境設定で登録してください）"
+            return
+        }
+        if (catalog.trim().isEmpty()) {
+            zpdicListError = "カタログ名を入力してください"
+            return
+        }
+        zpdicListLoading = true
+        zpdicListError = null
+        if (offset == 0) zpdicListItems = emptyList()
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = zpdicClient.fetchOfferList(catalog.trim(), offset, limit, apiKey)
+            withContext(Dispatchers.Main) {
+                zpdicListLoading = false
+                when (result) {
+                    is ZpdicApiClient.Result.Success -> {
+                        zpdicListItems = if (offset == 0) result.data
+                                         else zpdicListItems + result.data
+                    }
+                    is ZpdicApiClient.Result.Failure -> {
+                        zpdicListError = errorMessage(result.error, null)
+                        if (result.error == "auth_failed" || result.error == "api_key_non_ascii") {
+                            prefs.zpdicApiKey = null
+                            zpdicApiKeySet = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun clearZpdicList() {
+        zpdicListItems = emptyList()
+        zpdicListError = null
+    }
+
+    private fun errorMessage(error: String, number: Int?): String = when (error) {
+        "bad_request" -> "HTTP 400: リクエストの内容が誤っています"
+        "auth_failed" -> "HTTP 401: APIキーが正しくありません。環境設定から再設定してください"
+        "not_found" -> if (number != null) "HTTP 404: No. $number の出典は存在しません" else "HTTP 404: 見つかりません"
+        "rate_limit" -> "HTTP 429: 呼び出し回数の上限に達しています"
+        "api_key_non_ascii" -> "APIキーに使用できない文字が含まれています。環境設定から再設定してください"
+        else -> "エラー: $error"
     }
 
     /** 単語の削除（他の単語からの参照も取り除く） */
