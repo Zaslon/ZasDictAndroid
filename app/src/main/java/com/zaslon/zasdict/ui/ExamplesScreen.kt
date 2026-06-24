@@ -257,7 +257,6 @@ fun ExampleEditorScreen(
 
     var showWordPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var showZpdicBrowse by remember { mutableStateOf(false) }
 
     // 照会結果を受け取ってフォームに反映する
     LaunchedEffect(vm.zpdicOfferResult) {
@@ -450,10 +449,6 @@ fun ExampleEditorScreen(
                         onClick = { vm.fetchZpdicOffer(offerCatalog, offerNumber) },
                         enabled = !vm.zpdicOfferFetching
                     ) { Text("照会") }
-                    TextButton(onClick = {
-                        vm.clearZpdicList()
-                        showZpdicBrowse = true
-                    }) { Text("一覧") }
                 }
                 if (vm.zpdicOfferStatus.isNotEmpty()) {
                     Text(
@@ -481,22 +476,6 @@ fun ExampleEditorScreen(
                 showWordPicker = false
             },
             onDismiss = { showWordPicker = false }
-        )
-    }
-
-    // ZpDIC 出典一覧ダイアログ
-    if (showZpdicBrowse) {
-        ZpdicOfferListDialog(
-            vm = vm,
-            initialCatalog = if (isSelfCatalog) "" else offerCatalog,
-            onSelected = { number, trans, suppl ->
-                offerNumber = number
-                if (trans.isNotEmpty()) translation = trans
-                if (suppl.isNotEmpty()) supplement = suppl
-                vm.zpdicOfferStatus = "No. $number を選択しました"
-                showZpdicBrowse = false
-            },
-            onDismiss = { showZpdicBrowse = false }
         )
     }
 
@@ -585,163 +564,3 @@ private fun WordPickerDialog(
     )
 }
 
-// ------------------------------------------------------------------
-// ZpDIC 出典一覧ダイアログ
-// ------------------------------------------------------------------
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ZpdicOfferListDialog(
-    vm: MainViewModel,
-    initialCatalog: String,
-    onSelected: (number: Int, translation: String, supplement: String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val apiCatalogs = Const.EXAMPLE_CATALOG_OPTIONS.filter { it.first != Const.EXAMPLE_CATALOG_SELF }
-    val defaultCatalog = apiCatalogs.find { it.first == initialCatalog }?.first
-        ?: apiCatalogs.firstOrNull()?.first ?: ""
-    var catalog by remember { mutableStateOf(defaultCatalog) }
-    var catalogExpanded by remember { mutableStateOf(false) }
-    val PAGE = 50
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("ZpDIC 出典一覧") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val catalogLabel = apiCatalogs.find { it.first == catalog }?.second ?: catalog
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ExposedDropdownMenuBox(
-                        expanded = catalogExpanded,
-                        onExpandedChange = { catalogExpanded = it },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = catalogLabel,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("カタログ") },
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = catalogExpanded)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        )
-                        ExposedDropdownMenu(
-                            expanded = catalogExpanded,
-                            onDismissRequest = { catalogExpanded = false }
-                        ) {
-                            apiCatalogs.forEach { (key, label) ->
-                                DropdownMenuItem(
-                                    text = { Text(label) },
-                                    onClick = {
-                                        catalog = key
-                                        catalogExpanded = false
-                                        vm.clearZpdicList()
-                                    },
-                                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                                )
-                            }
-                        }
-                    }
-                    TextButton(
-                        onClick = { vm.loadZpdicOfferList(catalog) },
-                        enabled = !vm.zpdicListLoading && catalog.isNotEmpty()
-                    ) { Text("取得") }
-                }
-
-                if (!vm.zpdicApiKeySet) {
-                    Text(
-                        "APIキーが設定されていません。環境設定から登録してください。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                if (vm.zpdicListLoading) {
-                    Text(
-                        "取得中...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                vm.zpdicListError?.let { err ->
-                    Text(
-                        err,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                if (vm.zpdicListItems.isNotEmpty()) {
-                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                        items(vm.zpdicListItems) { item ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelected(item.number, item.translation, item.supplement)
-                                    }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "No. ${item.number}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    if (item.author.isNotEmpty()) {
-                                        Text(
-                                            item.author,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                if (item.translation.isNotEmpty()) {
-                                    Text(
-                                        item.translation,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                if (item.supplement.isNotEmpty()) {
-                                    Text(
-                                        item.supplement,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            Divider()
-                        }
-                        if (vm.zpdicListItems.size % PAGE == 0 && vm.zpdicListItems.isNotEmpty()) {
-                            item {
-                                TextButton(
-                                    onClick = { vm.loadZpdicOfferList(catalog, vm.zpdicListItems.size, PAGE) },
-                                    enabled = !vm.zpdicListLoading,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) { Text("さらに読み込む") }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("閉じる") }
-        }
-    )
-}

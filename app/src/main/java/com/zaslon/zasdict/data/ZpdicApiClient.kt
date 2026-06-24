@@ -19,13 +19,6 @@ class ZpdicApiClient {
         val author: String
     )
 
-    data class OfferListItem(
-        val number: Int,
-        val translation: String,
-        val supplement: String,
-        val author: String
-    )
-
     sealed class Result<out T> {
         data class Success<T>(val data: T) : Result<T>()
         data class Failure(val error: String) : Result<Nothing>()
@@ -69,33 +62,4 @@ class ZpdicApiClient {
         }
     }
 
-    /** 出典一覧を取得する（/api/v0/exampleOffers/{catalog}?offset=&limit=） */
-    fun fetchOfferList(catalog: String, offset: Int, limit: Int, apiKey: String): Result<List<OfferListItem>> {
-        if (!apiKey.all { it.code < 128 }) return Result.Failure("api_key_non_ascii")
-        val url = "${ZpdicConfig.API_BASE}/exampleOffers/${catalogEncoded(catalog)}?offset=$offset&limit=$limit"
-        return try {
-            val resp = http.newCall(requestBuilder(apiKey, url).get().build()).execute()
-            val body = resp.body?.string() ?: ""
-            if (resp.code == 200) {
-                val arr = JSONObject(body).optJSONArray("exampleOffers")
-                val items = mutableListOf<OfferListItem>()
-                if (arr != null) {
-                    for (i in 0 until arr.length()) {
-                        val obj = arr.optJSONObject(i) ?: continue
-                        items.add(OfferListItem(
-                            number = obj.optInt("number", 0),
-                            translation = obj.optString("translation", ""),
-                            supplement = obj.optString("supplement", ""),
-                            author = obj.optString("author", "")
-                        ))
-                    }
-                }
-                Result.Success(items)
-            } else {
-                Result.Failure(errorFromCode(resp.code))
-            }
-        } catch (e: Exception) {
-            Result.Failure(e.message ?: "network_error")
-        }
-    }
 }

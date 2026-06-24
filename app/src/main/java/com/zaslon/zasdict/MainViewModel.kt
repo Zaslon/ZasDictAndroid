@@ -126,18 +126,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var zpdicOfferResult by mutableStateOf<ZpdicApiClient.OfferData?>(null)
         private set
 
-    /** 出典一覧ロード中フラグ */
-    var zpdicListLoading by mutableStateOf(false)
-        private set
-
-    /** 出典一覧の取得結果 */
-    var zpdicListItems by mutableStateOf<List<ZpdicApiClient.OfferListItem>>(emptyList())
-        private set
-
-    /** 出典一覧取得のエラーメッセージ */
-    var zpdicListError by mutableStateOf<String?>(null)
-        private set
-
     /** 名前を付けて保存で連携が外れた際、新しいCSVの選択を促すダイアログ表示フラグ */
     var promptRelinkChangelog by mutableStateOf(false)
         private set
@@ -1774,45 +1762,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-    }
-
-    /** 出典一覧を取得して zpdicListItems に設定する */
-    fun loadZpdicOfferList(catalog: String, offset: Int = 0, limit: Int = 50) {
-        val apiKey = prefs.zpdicApiKey ?: run {
-            zpdicListError = "APIキーが設定されていません（環境設定で登録してください）"
-            return
-        }
-        if (catalog.trim().isEmpty() || catalog.trim() == Const.EXAMPLE_CATALOG_SELF) {
-            zpdicListError = "カタログを選択してください"
-            return
-        }
-        zpdicListLoading = true
-        zpdicListError = null
-        if (offset == 0) zpdicListItems = emptyList()
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = zpdicClient.fetchOfferList(catalog.trim(), offset, limit, apiKey)
-            withContext(Dispatchers.Main) {
-                zpdicListLoading = false
-                when (result) {
-                    is ZpdicApiClient.Result.Success -> {
-                        zpdicListItems = if (offset == 0) result.data
-                                         else zpdicListItems + result.data
-                    }
-                    is ZpdicApiClient.Result.Failure -> {
-                        zpdicListError = errorMessage(result.error, null)
-                        if (result.error == "auth_failed" || result.error == "api_key_non_ascii") {
-                            prefs.zpdicApiKey = null
-                            zpdicApiKeySet = false
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fun clearZpdicList() {
-        zpdicListItems = emptyList()
-        zpdicListError = null
     }
 
     private fun errorMessage(error: String, number: Int?): String = when (error) {
