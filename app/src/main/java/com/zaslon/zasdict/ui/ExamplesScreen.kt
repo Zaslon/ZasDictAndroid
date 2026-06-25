@@ -58,8 +58,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.navigation.NavController
 import com.zaslon.zasdict.DraftExample
 import com.zaslon.zasdict.MainViewModel
@@ -438,12 +440,15 @@ fun ExampleEditorScreen(
                     OutlinedTextField(
                         value = if (offerNumber == 0) "" else offerNumber.toString(),
                         onValueChange = { v ->
-                            offerNumber = v.toIntOrNull() ?: 0
-                            vm.zpdicOfferStatus = ""
+                            if (v.all { it.isDigit() }) {
+                                offerNumber = v.toIntOrNull() ?: 0
+                                vm.zpdicOfferStatus = ""
+                            }
                         },
                         label = { Text("No.") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                     TextButton(
                         onClick = { vm.fetchZpdicOffer(offerCatalog, offerNumber) },
