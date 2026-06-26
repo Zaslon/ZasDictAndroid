@@ -54,7 +54,9 @@ fun DetailScreen(
     vm: MainViewModel,
     navController: NavController,
     wordId: Int,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    isPane: Boolean = false,
+    onSelectWord: ((Int?) -> Unit)? = null
 ) {
     val word = vm.wordById(wordId)
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -70,13 +72,15 @@ fun DetailScreen(
     val scale = vm.fontScale
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { if (!isPane) SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("詳細") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                    if (!isPane) {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        }
                     }
                 },
                 actions = {
@@ -206,7 +210,8 @@ fun DetailScreen(
                                 SuggestionChip(
                                     onClick = {
                                         if (vm.wordById(tid) != null) {
-                                            navController.navigate(Routes.detail(tid))
+                                            if (isPane) onSelectWord?.invoke(tid)
+                                            else navController.navigate(Routes.detail(tid))
                                         }
                                     },
                                     label = {
@@ -239,7 +244,8 @@ fun DetailScreen(
             onConfirm = {
                 showDeleteConfirm = false
                 vm.deleteWord(wordId)
-                navController.popBackStack()
+                if (isPane) onSelectWord?.invoke(null)
+                else navController.popBackStack()
             },
             onDismiss = { showDeleteConfirm = false }
         )

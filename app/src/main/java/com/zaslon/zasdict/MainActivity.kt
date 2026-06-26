@@ -10,14 +10,26 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -94,6 +106,8 @@ class MainActivity : ComponentActivity() {
 fun ZasDictApp(vm: MainViewModel = viewModel()) {
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp.toFloat() >= configuration.screenHeightDp.toFloat() * 1.5f
 
     LaunchedEffect(vm.message) {
         vm.message?.let {
@@ -136,7 +150,11 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
         popExitTransition = { if (eink) ExitTransition.None else fadeOut(animationSpec = tween(220)) }
     ) {
         composable(Routes.SEARCH) {
-            SearchScreen(vm, navController, snackbarHostState)
+            if (isTablet) {
+                TabletSearchDetailLayout(vm, navController, snackbarHostState)
+            } else {
+                SearchScreen(vm, navController, snackbarHostState)
+            }
         }
         composable(
             Routes.DETAIL,
@@ -172,6 +190,57 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
         }
         composable(Routes.EXAMPLE_EDITOR) {
             ExampleEditorScreen(vm, navController, snackbarHostState)
+        }
+    }
+}
+
+@Composable
+private fun TabletSearchDetailLayout(
+    vm: MainViewModel,
+    navController: NavController,
+    snackbarHostState: SnackbarHostState
+) {
+    Row(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f)) {
+            SearchScreen(
+                vm = vm,
+                navController = navController,
+                snackbarHostState = snackbarHostState,
+                onWordClick = { id -> vm.selectTabletWord(id) },
+                selectedWordId = vm.tabletSelectedWordId
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outlineVariant)
+        )
+        Box(modifier = Modifier.weight(1f)) {
+            val selectedId = vm.tabletSelectedWordId
+            if (selectedId != null) {
+                DetailScreen(
+                    vm = vm,
+                    navController = navController,
+                    wordId = selectedId,
+                    snackbarHostState = snackbarHostState,
+                    isPane = true,
+                    onSelectWord = { id -> vm.selectTabletWord(id) }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "単語を選択してください",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ package com.zaslon.zasdict.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,7 +65,9 @@ import org.json.JSONObject
 fun SearchScreen(
     vm: MainViewModel,
     navController: NavController,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    onWordClick: ((Int) -> Unit)? = null,
+    selectedWordId: Int? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var contextMenuFor by remember { mutableStateOf<Int?>(null) }
@@ -401,12 +404,20 @@ fun SearchScreen(
             ) {
                 items(displayItems) { (display, word) ->
                     val id = DictionaryStore.idOf(word)
+                    val isSelected = id == selectedWordId
                     Box {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .then(
+                                    if (isSelected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+                                    else Modifier
+                                )
                                 .combinedClickable(
-                                    onClick = { navController.navigate(Routes.detail(id)) },
+                                    onClick = {
+                                        if (onWordClick != null) onWordClick(id)
+                                        else navController.navigate(Routes.detail(id))
+                                    },
                                     onLongClick = { contextMenuFor = id }
                                 )
                                 .padding(horizontal = 16.dp, vertical = 10.dp)

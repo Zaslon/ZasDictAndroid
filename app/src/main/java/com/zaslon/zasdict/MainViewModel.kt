@@ -107,6 +107,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var examplesVersion by mutableStateOf(0)
         private set
 
+    /** タブレット2ペインで右ペインに表示中の単語ID（null = 未選択） */
+    var tabletSelectedWordId by mutableStateOf<Int?>(null)
+
+    fun selectTabletWord(id: Int?) { tabletSelectedWordId = id }
+
     // ------------------------------------------------------------------
     // ZpDIC Online API 状態
     // ------------------------------------------------------------------
