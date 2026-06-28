@@ -115,6 +115,19 @@ class DictionaryStore {
         return max
     }
 
+    fun maxSelfOfferNumber(): Int {
+        val arr = examples
+        var max = 0
+        for (i in 0 until arr.length()) {
+            val offer = arr.optJSONObject(i)?.optJSONObject("offer") ?: continue
+            if (offer.optString("catalog") == com.zaslon.zasdict.domain.Const.EXAMPLE_CATALOG_SELF) {
+                val n = offer.optInt("number", 0)
+                if (n > max) max = n
+            }
+        }
+        return max
+    }
+
     fun addExample(example: JSONObject) {
         examples.put(example)
     }

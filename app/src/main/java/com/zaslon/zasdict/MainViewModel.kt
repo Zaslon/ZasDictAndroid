@@ -1620,8 +1620,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             post("先に辞書ファイルを開いてください。")
             return
         }
-        exampleDraft = DraftExample()
+        exampleDraft = DraftExample(offerNumber = store.maxExampleId() + 1)
     }
+
+    fun nextSelfOfferNumber(): Int = store.maxExampleId() + 1
 
     fun startEditExample(id: Int) {
         val arr = store.examples
@@ -1686,7 +1688,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .put("words", wordsArr)
             .put("offer", JSONObject()
                 .put("catalog", draft.offerCatalog)
-                .put("number", draft.offerNumber))
+                .put("number", if (isNew && draft.offerCatalog == Const.EXAMPLE_CATALOG_SELF) id else draft.offerNumber))
 
         if (isNew) {
             store.addExample(obj)

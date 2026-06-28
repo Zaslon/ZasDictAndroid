@@ -422,7 +422,10 @@ fun ExampleEditorScreen(
                             text = { Text(label) },
                             onClick = {
                                 offerCatalog = key
-                                offerNumber = 0
+                                offerNumber = if (key == Const.EXAMPLE_CATALOG_SELF && isNew)
+                                    vm.nextSelfOfferNumber()
+                                else
+                                    0
                                 vm.zpdicOfferStatus = ""
                                 catalogExpanded = false
                             },
@@ -431,7 +434,13 @@ fun ExampleEditorScreen(
                     }
                 }
             }
-            if (!isSelfCatalog) {
+            if (isSelfCatalog) {
+                Text(
+                    text = "No. $offerNumber（自動採番）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
