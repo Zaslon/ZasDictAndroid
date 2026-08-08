@@ -52,6 +52,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.BuildConfig
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.data.DictionaryStore
@@ -72,6 +73,7 @@ fun SearchScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var contextMenuFor by remember { mutableStateOf<Int?>(null) }
     var deleteConfirmFor by remember { mutableStateOf<JSONObject?>(null) }
+    var showVersionDialog by remember { mutableStateOf(false) }
 
     val einkMode = LocalEinkMode.current
     val isDropbox = vm.storageMode == StorageMode.DROPBOX
@@ -288,6 +290,11 @@ fun SearchScreen(
                             menuExpanded = false
                             navController.navigate(Routes.DICT_SETTINGS)
                         })
+                        Divider()
+                        DropdownMenuItem(text = { Text("バージョン情報") }, onClick = {
+                            menuExpanded = false
+                            showVersionDialog = true
+                        })
                     }
                 }
             )
@@ -466,6 +473,10 @@ fun SearchScreen(
         }
     }
 
+    if (showVersionDialog) {
+        VersionDialog(onDismiss = { showVersionDialog = false })
+    }
+
     deleteConfirmFor?.let { word ->
         DeleteConfirmDialog(
             form = DictionaryStore.formOf(word),
@@ -476,6 +487,23 @@ fun SearchScreen(
             onDismiss = { deleteConfirmFor = null }
         )
     }
+}
+
+@Composable
+fun VersionDialog(onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("バージョン情報") },
+        text = {
+            Column {
+                Text("ZasDict for Android", fontWeight = FontWeight.Bold)
+                Text("バージョン: ${BuildConfig.VERSION_NAME}")
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("閉じる") }
+        }
+    )
 }
 
 @Composable

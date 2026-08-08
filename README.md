@@ -38,6 +38,22 @@ gradle assembleDebug
 
 生成物: `app/build/outputs/apk/debug/app-debug.apk`
 
+## バージョニング規則
+
+バージョン名は **`yyyymmdd` + 英小文字1文字** の形式とします（例: `20260808a`）。
+
+- `yyyymmdd`: そのバージョンをリリース（更新）した日付
+- 末尾の英字: 同日中の更新回数。1回目が `a`、以降 `b`, `c`, ... と進める
+- 日付が変われば英字は `a` に戻す
+
+更新手順:
+
+1. `app/build.gradle.kts` の `versionName` を上記規則で更新する
+2. 同時に `versionCode` を 1 ずつ増やす（Android の仕様上、単調増加が必要なため）
+
+アプリ内では ハンバーガーメニュー → 「バージョン情報」 で確認できます
+（表示は `BuildConfig.VERSION_NAME` を参照しているため、`build.gradle.kts` の更新だけで反映されます）。
+
 ## Heksa（イジェール文字フォント）について
 
 フォントファイル（Fazik-regular.ttf）はリポジトリに含めていません。

@@ -12,8 +12,9 @@ android {
         applicationId = "com.zaslon.zasdict"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // バージョニング規則は README.md「バージョニング規則」を参照
+        versionCode = 2
+        versionName = "20260808a"
     }
 
     buildTypes {
@@ -34,6 +35,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
