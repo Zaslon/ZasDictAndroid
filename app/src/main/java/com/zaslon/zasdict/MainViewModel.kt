@@ -24,6 +24,7 @@ import com.zaslon.zasdict.data.ZpdicApiClient
 import com.zaslon.zasdict.domain.Const
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -98,6 +99,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var exampleDraft by mutableStateOf<DraftExample?>(null)
         private set
+
+    /**
+     * クラウド（Dropbox / GitHub / Box）と通信中かどうか。
+     * true の間は保存・再読込を受け付けず、保存ボタン連打による多重アップロードを防ぐ。
+     */
+    var isSyncing by mutableStateOf(false)
+        private set
+
+    /**
+     * 同期処理を1件だけ実行する。既に実行中なら false を返して何もしない。
+     * [block] は Dispatchers.IO 上で実行される。
+     */
+    private fun launchSync(busyMessage: String = "同期処理中です。完了までお待ちください", block: suspend () -> Unit): Boolean {
+        if (isSyncing) {
+            post(busyMessage)
+            return false
+        }
+        isSyncing = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                block()
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main) { isSyncing = false }
+            }
+        }
+        return true
+    }
 
     /** 更新履歴画面の再読込トリガ（連携・保存のたびに増える） */
     var changelogVersion by mutableStateOf(0)
@@ -606,8 +634,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openFromDropbox(path: String, name: String) {
+        if (isSyncing) { post("Dropboxと同期中です。完了までお待ちください"); return }
         dropboxBrowserTarget = null
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSync("Dropboxと同期中です。完了までお待ちください") {
             try {
                 val token = getValidAccessToken()
                 val text = dropboxClient.downloadFile(token, path)
@@ -705,7 +734,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             post("Dropboxの辞書ファイルが選択されていません")
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSync("Dropboxと同期中です。完了までお待ちください") {
             try {
                 val token = getValidAccessToken()
 
@@ -904,11 +933,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openFromGitHub(path: String, name: String) {
+        if (isSyncing) { post("GitHubと同期中です。完了までお待ちください"); return }
         githubBrowserTarget = null
         val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
         val owner = prefs.githubOwner ?: return
         val repo = prefs.githubRepo ?: return
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSync("GitHubと同期中です。完了までお待ちください") {
             try {
                 val fileContent = githubClient.getFileContent(token, owner, repo, path)
                 store.loadFromString(fileContent.text)
@@ -1002,7 +1032,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val owner = prefs.githubOwner ?: return
         val repo = prefs.githubRepo ?: return
         val branch = prefs.githubBranch
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSync("GitHubと同期中です。完了までお待ちください") {
             try {
                 val dictText = store.toJsonString()
 
@@ -1215,9 +1245,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openFromBox(fileId: String, name: String) {
+        if (isSyncing) { post("Boxと同期中です。完了までお待ちください"); return }
         val folderId = boxBrowserFolderId
         boxBrowserTarget = null
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSync("Boxと同期中です。完了までお待ちください") {
             try {
                 val token = getValidBoxAccessToken()
                 val text = boxClient.downloadFile(token, fileId)
@@ -1315,7 +1346,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val dictFileId = prefs.boxDictFileId ?: run { post("Boxの辞書ファイルが選択されていません"); return }
         val dictName = prefs.boxDictName ?: return
         val dictFolderId = prefs.boxDictFolderId ?: "0"
-        viewModelScope.launch(Dispatchers.IO) {
+        launchSync("Boxと同期中です。完了までお待ちください") {
             try {
                 val token = getValidBoxAccessToken()
                 val dictText = store.toJsonString()

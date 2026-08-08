@@ -166,9 +166,18 @@ fun SearchScreen(
                     }
                 },
                 actions = {
+                    // 同期中は「同期中…」を表示し、保存操作を受け付けない
+                    if (vm.isSyncing) {
+                        Text(
+                            text = "同期中…",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                    }
                     // クラウドモード：未同期インジケータ
                     if (isDropbox && vm.dropboxHasPendingUpload) {
-                        IconButton(onClick = { vm.uploadToDropbox() }) {
+                        IconButton(onClick = { vm.uploadToDropbox() }, enabled = !vm.isSyncing) {
                             Icon(
                                 Icons.Default.CloudUpload,
                                 contentDescription = "Dropboxに保存",
@@ -177,7 +186,7 @@ fun SearchScreen(
                         }
                     }
                     if (isGitHub && vm.githubHasPendingUpload) {
-                        IconButton(onClick = { vm.uploadToGitHub() }) {
+                        IconButton(onClick = { vm.uploadToGitHub() }, enabled = !vm.isSyncing) {
                             Icon(
                                 Icons.Default.CloudUpload,
                                 contentDescription = "GitHubにコミット",
@@ -186,7 +195,7 @@ fun SearchScreen(
                         }
                     }
                     if (isBox && vm.boxHasPendingUpload) {
-                        IconButton(onClick = { vm.uploadToBox() }) {
+                        IconButton(onClick = { vm.uploadToBox() }, enabled = !vm.isSyncing) {
                             Icon(
                                 Icons.Default.CloudUpload,
                                 contentDescription = "Boxに保存",
@@ -207,11 +216,11 @@ fun SearchScreen(
                                 menuExpanded = false
                                 vm.openDropboxBrowser()
                             })
-                            DropdownMenuItem(text = { Text("Dropboxに保存") }, onClick = {
+                            DropdownMenuItem(text = { Text("Dropboxに保存") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.uploadToDropbox()
                             })
-                            DropdownMenuItem(text = { Text("Dropboxから再読込") }, onClick = {
+                            DropdownMenuItem(text = { Text("Dropboxから再読込") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromDropbox()
                             })
@@ -221,11 +230,11 @@ fun SearchScreen(
                                 menuExpanded = false
                                 vm.openGitHubBrowser()
                             })
-                            DropdownMenuItem(text = { Text("GitHubにコミット") }, onClick = {
+                            DropdownMenuItem(text = { Text("GitHubにコミット") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.uploadToGitHub()
                             })
-                            DropdownMenuItem(text = { Text("GitHubから再読込") }, onClick = {
+                            DropdownMenuItem(text = { Text("GitHubから再読込") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromGitHub()
                             })
@@ -235,11 +244,11 @@ fun SearchScreen(
                                 menuExpanded = false
                                 vm.openBoxBrowser()
                             })
-                            DropdownMenuItem(text = { Text("Boxに保存") }, onClick = {
+                            DropdownMenuItem(text = { Text("Boxに保存") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.uploadToBox()
                             })
-                            DropdownMenuItem(text = { Text("Boxから再読込") }, onClick = {
+                            DropdownMenuItem(text = { Text("Boxから再読込") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromBox()
                             })

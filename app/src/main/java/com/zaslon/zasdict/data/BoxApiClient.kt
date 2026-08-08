@@ -8,13 +8,52 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.SocketException
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 class BoxApiClient {
 
-    private val http = OkHttpClient()
+    /** 認証・一覧など軽量なリクエスト用 */
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    /**
+     * 辞書本体のアップロード・ダウンロード用。
+     * read/write は「無通信が続いた時間」の上限なので、テザリングなど低速回線でも
+     * 転送が進んでいる限り切れない。callTimeout は1回の通信全体の上限。
+     */
+    private val transferHttp = http.newBuilder()
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .callTimeout(120, TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * 一時的な通信エラー（タイムアウト・接続断）だけを対象に再試行する。
+     * HTTPエラー（4xx/5xx）は [IOException] として投げ直されるがここでは再試行しない。
+     */
+    private fun <T> withRetry(attempts: Int = 2, block: () -> T): T {
+        var lastError: IOException? = null
+        repeat(attempts) { i ->
+            try {
+                return block()
+            } catch (e: InterruptedIOException) {   // SocketTimeoutException を含む
+                lastError = e
+            } catch (e: SocketException) {
+                lastError = e
+            }
+            if (i < attempts - 1) Thread.sleep(1000L * (i + 1))
+        }
+        throw IOException("通信がタイムアウトしました。電波状況を確認して再試行してください", lastError)
+    }
 
     data class TokenResult(
         val accessToken: String,
@@ -158,69 +197,94 @@ class BoxApiClient {
     // ファイル操作
     // ------------------------------------------------------------------
 
-    fun downloadFile(accessToken: String, fileId: String): String {
-        val resp = http.newCall(
+    fun downloadFile(accessToken: String, fileId: String): String = withRetry {
+        transferHttp.newCall(
             Request.Builder()
                 .url("${BoxConfig.API_BASE}/files/$fileId/content")
                 .header("Authorization", "Bearer $accessToken")
                 .get()
                 .build()
-        ).execute()
-        if (!resp.isSuccessful) {
-            throw IOException("ダウンロード失敗 (${resp.code}): ${resp.body?.string()}")
+        ).execute().use { resp ->
+            val bodyStr = resp.body?.string() ?: throw IOException("空のレスポンス")
+            if (!resp.isSuccessful) {
+                throw IOException("ダウンロード失敗 (${resp.code}): $bodyStr")
+            }
+            bodyStr
         }
-        return resp.body?.string() ?: throw IOException("空のレスポンス")
     }
 
-    /** 新規ファイルをアップロードして Box ファイル ID を返す */
+    /**
+     * 新規ファイルをアップロードして Box ファイル ID を返す。
+     * 同名ファイルが既にある場合（再試行で二重送信になった場合を含む）は、
+     * 競合したファイルを上書きしてその ID を返す。
+     */
     fun uploadNewFile(accessToken: String, folderId: String, name: String, content: String): String {
         val attributes = JSONObject().apply {
             put("name", name)
             put("parent", JSONObject().put("id", folderId))
         }.toString()
-        val multipart = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("attributes", attributes)
-            .addFormDataPart(
-                "file", name,
-                content.toByteArray(Charsets.UTF_8).toRequestBody("application/octet-stream".toMediaType())
-            )
-            .build()
-        val resp = http.newCall(
-            Request.Builder()
-                .url("${BoxConfig.UPLOAD_BASE}/files/content")
-                .header("Authorization", "Bearer $accessToken")
-                .post(multipart)
+        return withRetry {
+            val multipart = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("attributes", attributes)
+                .addFormDataPart(
+                    "file", name,
+                    content.toByteArray(Charsets.UTF_8).toRequestBody("application/octet-stream".toMediaType())
+                )
                 .build()
-        ).execute()
-        val bodyStr = resp.body?.string() ?: throw IOException("Empty response")
-        if (!resp.isSuccessful) {
-            val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-            throw IOException("アップロード失敗 (${resp.code}): $msg")
+            transferHttp.newCall(
+                Request.Builder()
+                    .url("${BoxConfig.UPLOAD_BASE}/files/content")
+                    .header("Authorization", "Bearer $accessToken")
+                    .post(multipart)
+                    .build()
+            ).execute().use { resp ->
+                val bodyStr = resp.body?.string() ?: throw IOException("Empty response")
+                if (resp.code == 409) {
+                    // 同名ファイルが既に存在する → そのファイルを上書きする
+                    val conflictId = runCatching {
+                        JSONObject(bodyStr)
+                            .getJSONObject("context_info")
+                            .getJSONObject("conflicts")
+                            .getString("id")
+                    }.getOrNull()
+                    if (conflictId != null) {
+                        updateFile(accessToken, conflictId, name, content)
+                        return@use conflictId
+                    }
+                }
+                if (!resp.isSuccessful) {
+                    val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
+                    throw IOException("アップロード失敗 (${resp.code}): $msg")
+                }
+                JSONObject(bodyStr).getJSONArray("entries").getJSONObject(0).getString("id")
+            }
         }
-        return JSONObject(bodyStr).getJSONArray("entries").getJSONObject(0).getString("id")
     }
 
-    /** 既存ファイルの内容を上書きする */
+    /** 既存ファイルの内容を上書きする（同じ内容の再送は安全なので再試行する） */
     fun updateFile(accessToken: String, fileId: String, name: String, content: String) {
-        val multipart = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart(
-                "file", name,
-                content.toByteArray(Charsets.UTF_8).toRequestBody("application/octet-stream".toMediaType())
-            )
-            .build()
-        val resp = http.newCall(
-            Request.Builder()
-                .url("${BoxConfig.UPLOAD_BASE}/files/$fileId/content")
-                .header("Authorization", "Bearer $accessToken")
-                .post(multipart)
+        withRetry {
+            val multipart = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file", name,
+                    content.toByteArray(Charsets.UTF_8).toRequestBody("application/octet-stream".toMediaType())
+                )
                 .build()
-        ).execute()
-        if (!resp.isSuccessful) {
-            val bodyStr = resp.body?.string() ?: ""
-            val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-            throw IOException("アップロード失敗 (${resp.code}): $msg")
+            transferHttp.newCall(
+                Request.Builder()
+                    .url("${BoxConfig.UPLOAD_BASE}/files/$fileId/content")
+                    .header("Authorization", "Bearer $accessToken")
+                    .post(multipart)
+                    .build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val bodyStr = resp.body?.string() ?: ""
+                    val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
+                    throw IOException("アップロード失敗 (${resp.code}): $msg")
+                }
+            }
         }
     }
 

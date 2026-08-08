@@ -8,10 +8,17 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 class GitHubApiClient {
 
-    private val http = OkHttpClient()
+    // 低速回線（テザリング等）でも辞書のアップロードが切れないよう長めに取る
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
 
     data class FileEntry(
         val name: String,

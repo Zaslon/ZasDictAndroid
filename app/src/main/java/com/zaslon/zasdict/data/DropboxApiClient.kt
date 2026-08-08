@@ -10,10 +10,17 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 class DropboxApiClient {
 
-    private val http = OkHttpClient()
+    // 低速回線（テザリング等）でも辞書のアップロードが切れないよう長めに取る
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
 
     data class TokenResult(
         val accessToken: String,
