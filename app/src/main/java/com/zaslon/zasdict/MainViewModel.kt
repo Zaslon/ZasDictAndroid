@@ -1711,6 +1711,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exampleList(): List<JSONObject> = store.exampleList()
 
+    fun examplesByWordId(wordId: Int): List<JSONObject> =
+        store.exampleList().filter { ex ->
+            val words = ex.optJSONArray("words") ?: return@filter false
+            (0 until words.length()).any { i ->
+                words.optJSONObject(i)?.optInt("id", -1) == wordId
+            }
+        }
+
     // ------------------------------------------------------------------
     // ZpDIC Online API 操作
     // ------------------------------------------------------------------

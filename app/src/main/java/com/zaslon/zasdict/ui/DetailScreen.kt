@@ -1,5 +1,6 @@
 package com.zaslon.zasdict.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -230,6 +231,51 @@ fun DetailScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     tags.forEach { tag ->
                         AssistChip(onClick = { }, label = { Text(tag) })
+                    }
+                }
+            }
+
+            // --- 参照例文 ---
+            val examples = remember(vm.examplesVersion, wordId) { vm.examplesByWordId(wordId) }
+            if (examples.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "参照例文",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    examples.forEach { ex ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val exId = ex.optInt("id", -1)
+                                    if (exId >= 0) {
+                                        vm.startEditExample(exId)
+                                        navController.navigate(Routes.EXAMPLE_EDITOR)
+                                    }
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = ex.optString("sentence", ""),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = MaterialTheme.typography.bodyMedium.fontSize * scale
+                                ),
+                                fontFamily = vm.headwordFontFamily
+                            )
+                            val exTranslation = ex.optString("translation", "")
+                            if (exTranslation.isNotEmpty()) {
+                                Text(
+                                    text = exTranslation,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = MaterialTheme.typography.bodySmall.fontSize * scale
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }
