@@ -13,8 +13,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // バージョニング規則は README.md「バージョニング規則」を参照
-        versionCode = 3
-        versionName = "20260808b"
+        versionCode = 4
+        versionName = "20260817a"
     }
 
     buildTypes {

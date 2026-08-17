@@ -177,6 +177,16 @@ class ChangelogStore(private val context: Context) {
         internalFile()?.delete()
     }
 
+    /**
+     * 履歴を空（ヘッダ行のみ）にする。
+     * クラウド連携時はこの空CSVがそのままアップロードされ、リモートの履歴も削除が反映される。
+     * （ファイルごと削除すると exportCsvText() が空文字になり、アップロード対象から外れてしまう）
+     */
+    fun clearToEmpty() {
+        pendingEntries.clear()
+        internalFile()?.writeText(HEADER + "\n")
+    }
+
     fun readAll(): List<ChangelogEntry> {
         val text = currentCsvText() ?: return emptyList()
         val lines = text.split("\n")

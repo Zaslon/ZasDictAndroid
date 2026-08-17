@@ -235,7 +235,13 @@ class GitHubApiClient {
         val bodyStr = resp.body?.string() ?: throw IOException("Empty response")
         if (!resp.isSuccessful) {
             val errMsg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
+                .take(ERROR_MESSAGE_LIMIT)
             throw IOException("フォルダ一覧取得失敗 (${resp.code}): $errMsg")
+        }
+        // ファイルのパスを渡すと配列ではなく単一オブジェクト（base64のcontent入り）が返る。
+        // そのまま JSONArray に渡すとレスポンス全文が例外メッセージになり画面へ出てしまう。
+        if (!bodyStr.trimStart().startsWith("[")) {
+            throw IOException("フォルダではなくファイルのパスが指定されました: $path")
         }
         val arr = JSONArray(bodyStr)
         val entries = mutableListOf<FileEntry>()
@@ -253,5 +259,10 @@ class GitHubApiClient {
             )
         }
         return entries.sortedWith(compareBy({ !it.isFolder }, { it.name.lowercase() }))
+    }
+
+    companion object {
+        /** 画面に表示するエラーメッセージの最大長（レスポンス本文の垂れ流しを防ぐ） */
+        private const val ERROR_MESSAGE_LIMIT = 300
     }
 }

@@ -127,6 +127,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /**
+     * ファイルブラウザに表示するエラー文言。
+     * APIのレスポンス本文がそのまま例外メッセージになることがあるため長さを制限する。
+     */
+    private fun browserErrorText(e: Exception): String =
+        (e.message?.takeIf { it.isNotBlank() } ?: "一覧を取得できませんでした")
+            .take(BROWSER_ERROR_LIMIT)
+
     /** 更新履歴画面の再読込トリガ（連携・保存のたびに増える） */
     var changelogVersion by mutableStateOf(0)
         private set
@@ -268,6 +276,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var pkceVerifier: String? = null
         val pendingBoxAuthCode = MutableStateFlow<String?>(null)
         var boxPkceVerifier: String? = null
+
+        /** ファイルブラウザのエラー表示の最大文字数 */
+        private const val BROWSER_ERROR_LIMIT = 300
     }
 
     init {
@@ -551,9 +562,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             post("先にDropboxに接続してください")
             return
         }
+        // substringBeforeLast は区切り文字が無いと文字列全体を返すため、
+        // ルート直下のCSVでもファイルパスを開こうとしないよう "" をフォールバックにする
         val startPath = prefs.dropboxChangelogPath
-            ?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
-            ?: prefs.dropboxDictPath?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
+            ?.substringBeforeLast("/", "")?.takeIf { it.isNotEmpty() }
+            ?: prefs.dropboxDictPath?.substringBeforeLast("/", "")?.takeIf { it.isNotEmpty() }
             ?: ""
         dropboxBrowserTarget = "changelog"
         dropboxBrowserPath = startPath
@@ -609,7 +622,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadDropboxFolder(parent)
     }
 
-    private fun loadDropboxFolder(path: String) {
+    private fun loadDropboxFolder(path: String, fallbackToRoot: Boolean = true) {
         dropboxBrowserLoading = true
         dropboxBrowserError = null
         viewModelScope.launch(Dispatchers.IO) {
@@ -621,9 +634,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     dropboxBrowserLoading = false
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    dropboxBrowserError = e.message
-                    dropboxBrowserLoading = false
+                if (fallbackToRoot && path.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        dropboxBrowserPath = ""
+                        loadDropboxFolder("", fallbackToRoot = false)
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        dropboxBrowserError = browserErrorText(e)
+                        dropboxBrowserLoading = false
+                    }
                 }
             }
         }
@@ -646,18 +666,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // ローカルキャッシュに書き込む（タスクキル対策）
                 dropboxCacheFile().writeText(text)
 
-                // changelog を辞書に紐付ける
-                val changelogPath = path.removeSuffix(".json") + "_changelog.csv"
+                // changelog を辞書に紐付ける。
+                // 同じ辞書を開き直す（再読込）ときは、ユーザーが設定した保存先を維持する。
+                val changelogPath = prefs.dropboxChangelogPath?.takeIf { prefs.dropboxDictPath == path }
+                    ?: (path.removeSuffix(".json") + "_changelog.csv")
                 prefs.dropboxDictPath = path
                 prefs.dropboxDictName = name
                 prefs.dropboxChangelogPath = changelogPath
                 prefs.dropboxHasPendingUpload = false
                 changelog.setDictionary("dropbox:$path")
+
                 // Dropbox上に既存のchangelogがあれば読み込む
+                val hadLocalHistory = changelog.exists()
+                var changelogFailed = false
                 try {
                     val csvText = dropboxClient.downloadFile(token, changelogPath)
                     changelog.loadFromText(csvText)
-                } catch (_: Exception) { }
+                } catch (_: Exception) {
+                    changelogFailed = true
+                }
 
                 withContext(Dispatchers.Main) {
                     fileName = name
@@ -668,7 +695,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     searchText = ""
                     results = emptyList()
                     changelogVersion++
-                    post("Dropboxから辞書を読み込みました")
+                    post(
+                        if (changelogFailed && hadLocalHistory)
+                            "Dropboxから辞書を読み込みました（更新履歴 $changelogPath を取得できませんでした。表示中の履歴は古い可能性があります）"
+                        else "Dropboxから辞書を読み込みました"
+                    )
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
@@ -839,9 +870,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openGitHubBrowserForChangelog() {
         if (!githubConnected) { post("先にGitHubに接続してください"); return }
+        // substringBeforeLast は区切り文字が無いと文字列全体を返すため、
+        // リポジトリ直下のCSV（例: dictionary_changelog.csv）ではルート("")を開始パスにする
         val startPath = prefs.githubChangelogPath
-            ?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
-            ?: prefs.githubDictPath?.substringBeforeLast("/")?.takeIf { it.isNotEmpty() }
+            ?.substringBeforeLast("/", "")?.takeIf { it.isNotEmpty() }
+            ?: prefs.githubDictPath?.substringBeforeLast("/", "")?.takeIf { it.isNotEmpty() }
             ?: ""
         githubBrowserTarget = "changelog"
         githubBrowserPath = startPath
@@ -906,7 +939,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadGitHubFolder(parent)
     }
 
-    private fun loadGitHubFolder(path: String) {
+    /**
+     * @param fallbackToRoot 取得に失敗したときルートを開き直すか。
+     *   保存先が移動・削除されていてもブラウザを操作不能にしないためのフォールバック。
+     */
+    private fun loadGitHubFolder(path: String, fallbackToRoot: Boolean = true) {
         val token = prefs.githubToken ?: return
         val owner = prefs.githubOwner ?: return
         val repo = prefs.githubRepo ?: return
@@ -920,9 +957,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     githubBrowserLoading = false
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    githubBrowserError = e.message
-                    githubBrowserLoading = false
+                if (fallbackToRoot && path.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        githubBrowserPath = ""
+                        loadGitHubFolder("", fallbackToRoot = false)
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        githubBrowserError = browserErrorText(e)
+                        githubBrowserLoading = false
+                    }
                 }
             }
         }
@@ -946,17 +990,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
                 gitHubCacheFile().writeText(fileContent.text)
 
-                val changelogPath = path.removeSuffix(".json") + "_changelog.csv"
+                // 同じ辞書を開き直す（再読込）ときは、ユーザーが設定した更新履歴の保存先を維持する。
+                // 別の辞書を開いたときだけ辞書名から自動設定する。
+                val changelogPath = prefs.githubChangelogPath?.takeIf { prefs.githubDictPath == path }
+                    ?: (path.removeSuffix(".json") + "_changelog.csv")
                 prefs.githubDictPath = path
                 prefs.githubDictName = name
                 prefs.githubChangelogPath = changelogPath
                 prefs.githubHasPendingUpload = false
                 changelog.setDictionary("github:$path")
 
+                val hadLocalHistory = changelog.exists()
+                var changelogFailed = false
                 try {
                     val csvContent = githubClient.getFileContent(token, owner, repo, changelogPath)
                     changelog.loadFromText(csvContent.text)
-                } catch (_: Exception) { }
+                } catch (_: Exception) {
+                    changelogFailed = true
+                }
 
                 withContext(Dispatchers.Main) {
                     fileName = name
@@ -967,7 +1018,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     searchText = ""
                     results = emptyList()
                     changelogVersion++
-                    post("GitHubから辞書を読み込みました")
+                    // 既存のローカル履歴がある状態で取得に失敗した＝古い履歴を表示し続けるので通知する
+                    post(
+                        if (changelogFailed && hadLocalHistory)
+                            "GitHubから辞書を読み込みました（更新履歴 $changelogPath を取得できませんでした。表示中の履歴は古い可能性があります）"
+                        else "GitHubから辞書を読み込みました"
+                    )
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
@@ -1220,7 +1276,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadBoxFolder(parent.first)
     }
 
-    private fun loadBoxFolder(folderId: String) {
+    private fun loadBoxFolder(folderId: String, fallbackToRoot: Boolean = true) {
         boxBrowserLoading = true
         boxBrowserError = null
         viewModelScope.launch(Dispatchers.IO) {
@@ -1232,9 +1288,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     boxBrowserLoading = false
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    boxBrowserError = e.message
-                    boxBrowserLoading = false
+                // 保存先フォルダが削除・移動されていてもブラウズ不能にならないようルートへ戻す
+                if (fallbackToRoot && folderId != "0") {
+                    withContext(Dispatchers.Main) {
+                        boxBrowserFolderStack = emptyList()
+                        boxBrowserFolderId = "0"
+                        boxBrowserFolderName = "Box"
+                        loadBoxFolder("0", fallbackToRoot = false)
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        boxBrowserError = browserErrorText(e)
+                        boxBrowserLoading = false
+                    }
                 }
             }
         }
@@ -1258,21 +1324,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
                 val dictBaseName = name.removeSuffix(".json")
                 val csvName = "${dictBaseName}_changelog.csv"
-                val changelogFileId = boxClient.findFileInFolder(token, folderId, csvName)
+                // 同じ辞書を開き直す（再読込）ときは、ユーザーが設定した更新履歴の保存先を維持する。
+                // 別の辞書を開いたときだけ辞書と同じフォルダから探す。
+                val isSameDict = prefs.boxDictFileId == fileId
+                val changelogFolderId =
+                    if (isSameDict) prefs.boxChangelogFolderId ?: folderId else folderId
+                val changelogFileId = (if (isSameDict) prefs.boxChangelogFileId else null)
+                    ?: boxClient.findFileInFolder(token, changelogFolderId, csvName)
 
                 prefs.boxDictFileId = fileId
                 prefs.boxDictFolderId = folderId
                 prefs.boxDictName = name
                 prefs.boxChangelogFileId = changelogFileId
-                prefs.boxChangelogFolderId = folderId
+                prefs.boxChangelogFolderId = changelogFolderId
                 prefs.boxHasPendingUpload = false
                 changelog.setDictionary("box:$fileId")
 
+                val hadLocalHistory = changelog.exists()
+                var changelogFailed = false
                 if (changelogFileId != null) {
                     try {
                         val csvText = boxClient.downloadFile(token, changelogFileId)
                         changelog.loadFromText(csvText)
-                    } catch (_: Exception) { }
+                    } catch (_: Exception) {
+                        changelogFailed = true
+                    }
                 }
 
                 withContext(Dispatchers.Main) {
@@ -1284,7 +1360,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     searchText = ""
                     results = emptyList()
                     changelogVersion++
-                    post("Boxから辞書を読み込みました")
+                    post(
+                        if (changelogFailed && hadLocalHistory)
+                            "Boxから辞書を読み込みました（更新履歴 $csvName を取得できませんでした。表示中の履歴は古い可能性があります）"
+                        else "Boxから辞書を読み込みました"
+                    )
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
@@ -1959,10 +2039,104 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         post("連携を解除しました。以後はアプリ内部に保存されます。")
     }
 
+    /**
+     * 更新履歴を削除する。
+     *
+     * クラウドモードではアプリ内部の履歴ファイルがリモートCSVのミラーになっているため、
+     * 単に削除するとリモートには古い履歴が残ったままになり不整合が生じる。
+     * そこで履歴を空（ヘッダのみ）にして未同期フラグを立て、次回の保存・コミットで
+     * リモートの履歴も空になるようにする。
+     */
     fun clearChangelogHistory() {
-        changelog.clearInternal()
-        changelogVersion++
-        post("更新履歴を削除しました")
+        when (storageMode) {
+            StorageMode.LOCAL -> {
+                changelog.clearInternal()
+                changelogVersion++
+                post("更新履歴を削除しました")
+            }
+            StorageMode.DROPBOX -> {
+                changelog.clearToEmpty()
+                prefs.dropboxHasPendingUpload = true
+                dropboxHasPendingUpload = true
+                changelogVersion++
+                post("更新履歴を削除しました（Dropboxに保存すると反映されます）")
+            }
+            StorageMode.GITHUB -> {
+                changelog.clearToEmpty()
+                prefs.githubHasPendingUpload = true
+                githubHasPendingUpload = true
+                changelogVersion++
+                post("更新履歴を削除しました（GitHubにコミットすると反映されます）")
+            }
+            StorageMode.BOX -> {
+                changelog.clearToEmpty()
+                prefs.boxHasPendingUpload = true
+                boxHasPendingUpload = true
+                changelogVersion++
+                post("更新履歴を削除しました（Boxに保存すると反映されます）")
+            }
+        }
+    }
+
+    /**
+     * クラウド上の更新履歴CSVを取得し直してローカル表示を最新化する。
+     * 誤って履歴を消した場合や、他端末・PC版の更新を取り込みたい場合の復旧手段。
+     */
+    fun reloadChangelogFromCloud() {
+        when (storageMode) {
+            StorageMode.LOCAL -> post("ローカルモードでは更新履歴の再取得はできません")
+            StorageMode.DROPBOX -> {
+                val path = prefs.dropboxChangelogPath
+                    ?: run { post("更新履歴の保存先が設定されていません"); return }
+                viewModelScope.launch(Dispatchers.IO) {
+                    val message = try {
+                        changelog.loadFromText(dropboxClient.downloadFile(getValidAccessToken(), path))
+                        "更新履歴を再取得しました: $path"
+                    } catch (e: Exception) {
+                        "更新履歴を取得できませんでした: ${e.message}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        changelogVersion++
+                        post(message)
+                    }
+                }
+            }
+            StorageMode.GITHUB -> {
+                val path = prefs.githubChangelogPath
+                    ?: run { post("更新履歴の保存先が設定されていません"); return }
+                val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
+                val owner = prefs.githubOwner ?: return
+                val repo = prefs.githubRepo ?: return
+                viewModelScope.launch(Dispatchers.IO) {
+                    val message = try {
+                        changelog.loadFromText(githubClient.getFileContent(token, owner, repo, path).text)
+                        "更新履歴を再取得しました: $path"
+                    } catch (e: Exception) {
+                        "更新履歴を取得できませんでした: ${e.message}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        changelogVersion++
+                        post(message)
+                    }
+                }
+            }
+            StorageMode.BOX -> {
+                val fileId = prefs.boxChangelogFileId
+                    ?: run { post("更新履歴の保存先が設定されていません"); return }
+                viewModelScope.launch(Dispatchers.IO) {
+                    val message = try {
+                        changelog.loadFromText(boxClient.downloadFile(getValidBoxAccessToken(), fileId))
+                        "更新履歴を再取得しました"
+                    } catch (e: Exception) {
+                        "更新履歴を取得できませんでした: ${e.message}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        changelogVersion++
+                        post(message)
+                    }
+                }
+            }
+        }
     }
 
     fun changelogLinkedName(): String? =
