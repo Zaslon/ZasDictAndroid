@@ -177,6 +177,14 @@ class ChangelogStore(private val context: Context) {
         internalFile()?.delete()
     }
 
+    /**
+     * 未保存（メモリ上）のエントリだけを破棄する。保存済みのCSVには触れない。
+     * 外部CSV連携中・クラウド連携中は保存済み履歴の実体がアプリ外にあるため、こちらを使う。
+     */
+    fun clearPending() {
+        pendingEntries.clear()
+    }
+
     fun readAll(): List<ChangelogEntry> {
         val text = currentCsvText() ?: return emptyList()
         val lines = text.split("\n")

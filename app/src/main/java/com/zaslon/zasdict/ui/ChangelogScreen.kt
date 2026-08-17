@@ -65,6 +65,13 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
 
     var showClearDialog by remember { mutableStateOf(false) }
 
+    // 保存済み履歴の実体がアプリ外（連携先CSV／クラウド上のCSV）にある場合は、
+    // 削除ボタンで消せるのは未保存の変更だけ。
+    val clearsPendingOnly = isExternalLinked || isDropbox || isGitHub || isBox
+    // 自動上書き保存が有効なら保留エントリはすぐ書き出されるため、取り消す対象が無い
+    val canClear = if (clearsPendingOnly) !vm.autoSave && pending.isNotEmpty()
+                   else entries.isNotEmpty() || pending.isNotEmpty()
+
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { vm.exportChangelog(it) } }
@@ -83,10 +90,12 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                     }
                 },
                 actions = {
-                    if ((!isExternalLinked && (entries.isNotEmpty() || pending.isNotEmpty())) ||
-                        (isExternalLinked && !vm.autoSave && pending.isNotEmpty())) {
+                    if (canClear) {
                         IconButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "履歴をクリア")
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = if (clearsPendingOnly) "未保存の変更を取り消す" else "履歴をクリア"
+                            )
                         }
                     }
                     if (entries.isNotEmpty()) {
@@ -145,9 +154,9 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         OutlinedButton(onClick = { vm.openBoxBrowserForChangelog() }) {
                             Text(if (changelogFileId != null) "保存先を変更" else "保存先を設定")
                         }
-                        if (vm.boxHasPendingUpload) {
-                            OutlinedButton(onClick = { vm.uploadToBox() }, enabled = !vm.isSyncing) {
-                                Text(if (vm.isSyncing) "同期中…" else "Boxに保存（更新履歴を同期）")
+                        if (changelogFileId != null) {
+                            OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
+                                Text("Boxから更新履歴を再取得")
                             }
                         }
                     } else if (isGitHub) {
@@ -179,9 +188,9 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         OutlinedButton(onClick = { vm.openGitHubBrowserForChangelog() }) {
                             Text(if (changelogPath != null) "保存先を変更" else "保存先を設定")
                         }
-                        if (vm.githubHasPendingUpload && pending.isEmpty()) {
-                            OutlinedButton(onClick = { vm.uploadToGitHub() }, enabled = !vm.isSyncing) {
-                                Text(if (vm.isSyncing) "同期中…" else "GitHubにコミット（更新履歴を同期）")
+                        if (changelogPath != null) {
+                            OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
+                                Text("GitHubから更新履歴を再取得")
                             }
                         }
                     } else if (isDropbox) {
@@ -213,9 +222,9 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         OutlinedButton(onClick = { vm.openDropboxBrowserForChangelog() }) {
                             Text(if (changelogPath != null) "保存先を変更" else "保存先を設定")
                         }
-                        if (vm.dropboxHasPendingUpload && pending.isEmpty()) {
-                            OutlinedButton(onClick = { vm.uploadToDropbox() }, enabled = !vm.isSyncing) {
-                                Text(if (vm.isSyncing) "同期中…" else "Dropboxに保存（更新履歴を同期）")
+                        if (changelogPath != null) {
+                            OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
+                                Text("Dropboxから更新履歴を再取得")
                             }
                         }
                     } else {
@@ -349,16 +358,33 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
     }
 
     if (showClearDialog) {
+        // 保存済み履歴の置き場所（アプリ内部か、連携先CSV／クラウド上か）で
+        // 消える範囲が変わるため、文言でそれを明示する。
+        val storedAt = when {
+            isGitHub -> "リポジトリ上"
+            isDropbox -> "Dropbox上"
+            isBox -> "Box上"
+            else -> "連携先CSV"
+        }
+        val clearMessage = if (clearsPendingOnly) {
+            "まだ保存されていない更新履歴 ${pending.size} 件を取り消します。\n" +
+                "${storedAt}に保存済みの更新履歴は削除されません。"
+        } else {
+            "アプリ内部に保存された更新履歴をすべて削除します。\nこの操作は元に戻せません。"
+        }
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("履歴を削除") },
-            text = { Text("アプリ内部に保存された更新履歴をすべて削除します。\nこの操作は元に戻せません。") },
+            title = { Text(if (clearsPendingOnly) "未保存の変更を取り消す" else "履歴を削除") },
+            text = { Text(clearMessage) },
             confirmButton = {
                 TextButton(onClick = {
                     vm.clearChangelogHistory()
                     showClearDialog = false
                 }) {
-                    Text("削除", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        if (clearsPendingOnly) "取り消す" else "削除",
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             },
             dismissButton = {
