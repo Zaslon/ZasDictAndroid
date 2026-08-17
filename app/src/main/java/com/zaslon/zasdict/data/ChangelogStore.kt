@@ -178,13 +178,11 @@ class ChangelogStore(private val context: Context) {
     }
 
     /**
-     * 履歴を空（ヘッダ行のみ）にする。
-     * クラウド連携時はこの空CSVがそのままアップロードされ、リモートの履歴も削除が反映される。
-     * （ファイルごと削除すると exportCsvText() が空文字になり、アップロード対象から外れてしまう）
+     * 未保存（メモリ上）のエントリだけを破棄する。保存済みのCSVには触れない。
+     * 外部CSV連携中・クラウド連携中は保存済み履歴の実体がアプリ外にあるため、こちらを使う。
      */
-    fun clearToEmpty() {
+    fun clearPending() {
         pendingEntries.clear()
-        internalFile()?.writeText(HEADER + "\n")
     }
 
     fun readAll(): List<ChangelogEntry> {

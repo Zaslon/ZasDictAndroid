@@ -2042,39 +2042,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 更新履歴を削除する。
      *
-     * クラウドモードではアプリ内部の履歴ファイルがリモートCSVのミラーになっているため、
-     * 単に削除するとリモートには古い履歴が残ったままになり不整合が生じる。
-     * そこで履歴を空（ヘッダのみ）にして未同期フラグを立て、次回の保存・コミットで
-     * リモートの履歴も空になるようにする。
+     * ローカルモードでアプリ内部に履歴を持っている場合のみ、記録済みの履歴を削除する。
+     * 外部CSV連携中・クラウドモードでは保存済み履歴の実体がアプリ外（連携先CSV／
+     * リモートCSV）にあり、アプリ内部のファイルはその写しにすぎないため、
+     * 未保存の変更を取り消すだけにする。
      */
     fun clearChangelogHistory() {
-        when (storageMode) {
-            StorageMode.LOCAL -> {
-                changelog.clearInternal()
-                changelogVersion++
-                post("更新履歴を削除しました")
-            }
-            StorageMode.DROPBOX -> {
-                changelog.clearToEmpty()
-                prefs.dropboxHasPendingUpload = true
-                dropboxHasPendingUpload = true
-                changelogVersion++
-                post("更新履歴を削除しました（Dropboxに保存すると反映されます）")
-            }
-            StorageMode.GITHUB -> {
-                changelog.clearToEmpty()
-                prefs.githubHasPendingUpload = true
-                githubHasPendingUpload = true
-                changelogVersion++
-                post("更新履歴を削除しました（GitHubにコミットすると反映されます）")
-            }
-            StorageMode.BOX -> {
-                changelog.clearToEmpty()
-                prefs.boxHasPendingUpload = true
-                boxHasPendingUpload = true
-                changelogVersion++
-                post("更新履歴を削除しました（Boxに保存すると反映されます）")
-            }
+        if (storageMode == StorageMode.LOCAL && !changelog.isExternalLinked()) {
+            changelog.clearInternal()
+            changelogVersion++
+            post("更新履歴を削除しました")
+        } else {
+            val count = changelog.pendingEntries.size
+            changelog.clearPending()
+            changelogVersion++
+            post(
+                if (count > 0) "未保存の変更 ${count} 件を取り消しました（保存済みの更新履歴は残ります）"
+                else "取り消す未保存の変更はありません"
+            )
         }
     }
 

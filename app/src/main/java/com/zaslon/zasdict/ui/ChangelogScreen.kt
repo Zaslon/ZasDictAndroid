@@ -65,6 +65,13 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
 
     var showClearDialog by remember { mutableStateOf(false) }
 
+    // 保存済み履歴の実体がアプリ外（連携先CSV／クラウド上のCSV）にある場合は、
+    // 削除ボタンで消せるのは未保存の変更だけ。
+    val clearsPendingOnly = isExternalLinked || isDropbox || isGitHub || isBox
+    // 自動上書き保存が有効なら保留エントリはすぐ書き出されるため、取り消す対象が無い
+    val canClear = if (clearsPendingOnly) !vm.autoSave && pending.isNotEmpty()
+                   else entries.isNotEmpty() || pending.isNotEmpty()
+
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { vm.exportChangelog(it) } }
@@ -83,10 +90,12 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                     }
                 },
                 actions = {
-                    if ((!isExternalLinked && (entries.isNotEmpty() || pending.isNotEmpty())) ||
-                        (isExternalLinked && !vm.autoSave && pending.isNotEmpty())) {
+                    if (canClear) {
                         IconButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "履歴をクリア")
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = if (clearsPendingOnly) "未保存の変更を取り消す" else "履歴をクリア"
+                            )
                         }
                     }
                     if (entries.isNotEmpty()) {
@@ -364,31 +373,33 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
     }
 
     if (showClearDialog) {
-        // クラウドモードではアプリ内の履歴がリモートCSVのミラーになっているため、
-        // 削除の影響範囲（保存/コミット時にリモートも空になる）を明示する。
-        val cloudName = when {
-            isGitHub -> "GitHub"
-            isDropbox -> "Dropbox"
-            isBox -> "Box"
-            else -> null
+        // 保存済み履歴の置き場所（アプリ内部か、連携先CSV／クラウド上か）で
+        // 消える範囲が変わるため、文言でそれを明示する。
+        val storedAt = when {
+            isGitHub -> "リポジトリ上"
+            isDropbox -> "Dropbox上"
+            isBox -> "Box上"
+            else -> "連携先CSV"
         }
-        val clearMessage = if (cloudName != null) {
-            "アプリ内の更新履歴をすべて削除します。\n" +
-                "「${cloudName}に${if (isGitHub) "コミット" else "保存"}」を実行すると、${cloudName}上の更新履歴も空になります。\n" +
-                "反映前であれば「${cloudName}から更新履歴を再取得」で元に戻せます。"
+        val clearMessage = if (clearsPendingOnly) {
+            "まだ保存されていない更新履歴 ${pending.size} 件を取り消します。\n" +
+                "${storedAt}に保存済みの更新履歴は削除されません。"
         } else {
             "アプリ内部に保存された更新履歴をすべて削除します。\nこの操作は元に戻せません。"
         }
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("履歴を削除") },
+            title = { Text(if (clearsPendingOnly) "未保存の変更を取り消す" else "履歴を削除") },
             text = { Text(clearMessage) },
             confirmButton = {
                 TextButton(onClick = {
                     vm.clearChangelogHistory()
                     showClearDialog = false
                 }) {
-                    Text("削除", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        if (clearsPendingOnly) "取り消す" else "削除",
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             },
             dismissButton = {
