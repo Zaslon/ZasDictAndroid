@@ -159,11 +159,6 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                                 Text("Boxから更新履歴を再取得")
                             }
                         }
-                        if (vm.boxHasPendingUpload) {
-                            OutlinedButton(onClick = { vm.uploadToBox() }, enabled = !vm.isSyncing) {
-                                Text(if (vm.isSyncing) "同期中…" else "Boxに保存（更新履歴を同期）")
-                            }
-                        }
                     } else if (isGitHub) {
                         // GitHubモード：GitHubパスを表示
                         val changelogPath = vm.prefs.githubChangelogPath
@@ -198,11 +193,6 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                                 Text("GitHubから更新履歴を再取得")
                             }
                         }
-                        if (vm.githubHasPendingUpload && pending.isEmpty()) {
-                            OutlinedButton(onClick = { vm.uploadToGitHub() }, enabled = !vm.isSyncing) {
-                                Text(if (vm.isSyncing) "同期中…" else "GitHubにコミット（更新履歴を同期）")
-                            }
-                        }
                     } else if (isDropbox) {
                         // Dropboxモード：Dropboxパスを表示
                         val changelogPath = vm.prefs.dropboxChangelogPath
@@ -235,11 +225,6 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         if (changelogPath != null) {
                             OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
                                 Text("Dropboxから更新履歴を再取得")
-                            }
-                        }
-                        if (vm.dropboxHasPendingUpload && pending.isEmpty()) {
-                            OutlinedButton(onClick = { vm.uploadToDropbox() }, enabled = !vm.isSyncing) {
-                                Text(if (vm.isSyncing) "同期中…" else "Dropboxに保存（更新履歴を同期）")
                             }
                         }
                     } else {
