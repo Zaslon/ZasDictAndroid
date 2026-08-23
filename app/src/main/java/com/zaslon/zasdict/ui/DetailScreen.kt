@@ -79,7 +79,13 @@ fun DetailScreen(
                 title = { Text("詳細") },
                 navigationIcon = {
                     if (!isPane) {
-                        IconButton(onClick = { navController.popBackStack() }) {
+                        IconButton(onClick = { 
+                            navController.navigate(Routes.SEARCH) {
+                                popUpTo(Routes.SEARCH) {
+                                    inclusive = false
+                                }
+                            }
+                        }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                         }
                     }
