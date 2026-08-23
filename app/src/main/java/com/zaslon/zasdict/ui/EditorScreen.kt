@@ -8,11 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,8 +17,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -56,7 +51,6 @@ import com.zaslon.zasdict.DraftTranslation
 import com.zaslon.zasdict.DraftVariation
 import com.zaslon.zasdict.EditorDraft
 import com.zaslon.zasdict.MainViewModel
-import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
@@ -331,8 +325,9 @@ fun EditorScreen(
 
     // 関係先の単語選択ダイアログ
     showRelationPicker?.let { index ->
-        RelationTargetPickerDialog(
+        WordFormPickerDialog(
             vm = vm,
+            title = "対象語を選択",
             onSelected = { id, formStr ->
                 relations[index] = relations[index].copy(targetId = id, targetForm = formStr)
                 showRelationPicker = null
@@ -399,57 +394,3 @@ private fun RelationDropdown(value: String, onValueChange: (String) -> Unit, mod
     }
 }
 
-@Composable
-private fun RelationTargetPickerDialog(
-    vm: MainViewModel,
-    onSelected: (Int, String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var query by remember { mutableStateOf("") }
-    val candidates = remember(query) { vm.searchFormsForPicker(query) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("対象語を選択") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text("前方一致で検索") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                    items(candidates) { word ->
-                        val id = DictionaryStore.idOf(word)
-                        val f = DictionaryStore.formOf(word)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelected(id, f) }
-                                .padding(vertical = 8.dp, horizontal = 4.dp)
-                        ) {
-                            Text(f, fontFamily = vm.headwordFontFamily)
-                            val tr = DictionaryStore.translationsOf(word).firstOrNull()
-                            if (tr != null) {
-                                Text(
-                                    "${tr.first}：${tr.second.joinToString(", ")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                        Divider()
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
-        }
-    )
-}

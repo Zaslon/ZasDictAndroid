@@ -1520,9 +1520,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 関係先選択などのための簡易前方一致検索 */
     fun searchFormsForPicker(query: String, limit: Int = 50): List<JSONObject> {
         val q = query.lowercase()
-        val list = engine.allWords().filter {
-            q.isEmpty() || DictionaryStore.formOf(it).lowercase().startsWith(q)
-        }
+        val list = engine.wordsWithFormPrefix(q)
         return list.sortedWith { a, b ->
             com.zaslon.zasdict.domain.TextProcessor.compareForms(
                 DictionaryStore.formOf(a), DictionaryStore.formOf(b)

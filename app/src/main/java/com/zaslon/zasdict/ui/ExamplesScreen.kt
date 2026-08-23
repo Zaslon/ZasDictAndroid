@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,7 +65,6 @@ import androidx.navigation.NavController
 import com.zaslon.zasdict.DraftExample
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.Routes
-import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import org.json.JSONObject
@@ -482,8 +480,9 @@ fun ExampleEditorScreen(
 
     // 単語ピッカーダイアログ
     if (showWordPicker) {
-        WordPickerDialog(
+        WordFormPickerDialog(
             vm = vm,
+            title = "関連単語を選択",
             excludeIds = linkedWords.map { it.first }.toSet(),
             onSelected = { id, form ->
                 linkedWords.add(Pair(id, form))
@@ -512,69 +511,5 @@ fun ExampleEditorScreen(
             }
         )
     }
-}
-
-// ------------------------------------------------------------------
-// 単語ピッカーダイアログ（関連単語選択用）
-// ------------------------------------------------------------------
-
-@Composable
-private fun WordPickerDialog(
-    vm: MainViewModel,
-    excludeIds: Set<Int>,
-    onSelected: (Int, String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var query by remember { mutableStateOf("") }
-    val candidates = remember(query) {
-        vm.searchFormsForPicker(query).filter {
-            DictionaryStore.idOf(it) !in excludeIds
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("関連単語を選択") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text("前方一致で検索") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                    items(candidates) { word ->
-                        val id = DictionaryStore.idOf(word)
-                        val form = DictionaryStore.formOf(word)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelected(id, form) }
-                                .padding(vertical = 8.dp, horizontal = 4.dp)
-                        ) {
-                            Text(form, fontFamily = vm.headwordFontFamily)
-                            val tr = DictionaryStore.translationsOf(word).firstOrNull()
-                            if (tr != null) {
-                                Text(
-                                    "${tr.first}：${tr.second.joinToString(", ")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                        Divider()
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
-        }
-    )
 }
 

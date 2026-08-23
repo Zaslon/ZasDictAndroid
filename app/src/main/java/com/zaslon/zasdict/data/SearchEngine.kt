@@ -11,6 +11,9 @@ class SearchEngine(private val store: DictionaryStore) {
     private var index: MutableMap<String, MutableSet<Int>> = HashMap()
     private var idMap: MutableMap<Int, JSONObject> = LinkedHashMap()
 
+    /** 見出し語の小文字形で昇順ソートした (form, id) 一覧。前方一致検索の二分探索に使う。 */
+    private var formSorted: List<Pair<String, Int>> = emptyList()
+
     fun rebuild() {
         val newIndex = HashMap<String, MutableSet<Int>>()
         val newIdMap = LinkedHashMap<Int, JSONObject>()
@@ -54,11 +57,37 @@ class SearchEngine(private val store: DictionaryStore) {
 
         index = newIndex
         idMap = newIdMap
+        formSorted = newIdMap.values
+            .map { DictionaryStore.formOf(it).lowercase() to DictionaryStore.idOf(it) }
+            .sortedBy { it.first }
     }
 
     fun lookup(id: Int): JSONObject? = idMap[id] ?: store.findById(id)
 
     fun allWords(): Collection<JSONObject> = idMap.values
+
+    /**
+     * 小文字形が [prefix] で前方一致する単語を返す（総当たりせず二分探索で範囲を絞る）。
+     * [prefix] が空の場合は全件を返す。
+     */
+    fun wordsWithFormPrefix(prefix: String): List<JSONObject> {
+        if (prefix.isEmpty()) return idMap.values.toList()
+        val from = formSorted.lowerBound(prefix)
+        val to = formSorted.lowerBound(prefix + Char.MAX_VALUE)
+        if (from >= to) return emptyList()
+        return (from until to).mapNotNull { idMap[formSorted[it].second] }
+    }
+
+    /** [target] 以上となる最初の要素の位置（下限）を返す。 */
+    private fun List<Pair<String, Int>>.lowerBound(target: String): Int {
+        var lo = 0
+        var hi = size
+        while (lo < hi) {
+            val mid = (lo + hi) / 2
+            if (this[mid].first < target) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
 
     /** 検索を実行し、カスタムソート順で並べた結果を返す */
     fun search(mode: String, scope: String, text: String): List<JSONObject> {
