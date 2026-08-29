@@ -114,8 +114,25 @@ class ChangelogStore(private val context: Context) {
     // ------------------------------------------------------------------
 
     fun addEntry(type: String, form: String, details: String = "") {
+        // ADD / CHANGE の直後の CHANGE は、その語が追加・変更済みであることを繰り返すだけなので記録しない。
+        // DELETE 後の CHANGE は復活を示すため残す。
+        if (type == "CHANGE" && lastTypeOf(form) in setOf("ADD", "CHANGE")) return
         val timestamp = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
         pendingEntries.add(ChangelogEntry(timestamp, type, form, details))
+    }
+
+    /**
+     * 同一見出し語について最後に記録された種別。未記録なら null。
+     * 日付での区切りは設けず、CSV全履歴を通した最後の行で判定する。
+     * 見出し語のリネーム後は新しい見出し語に履歴がないため null になる。
+     */
+    private fun lastTypeOf(form: String): String? {
+        pendingEntries.lastOrNull { it.form == form }?.let { return it.type }
+        return try {
+            readAll().lastOrNull { it.form == form }?.type
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
