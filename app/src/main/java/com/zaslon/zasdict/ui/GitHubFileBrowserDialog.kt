@@ -13,9 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,12 +22,16 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.zaslon.zasdict.R
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.data.GitHubApiClient
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
 @Composable
 fun GitHubFileBrowserDialog(
@@ -48,7 +51,8 @@ fun GitHubFileBrowserDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        modifier = Modifier.einkFocusFrame(),
+        title = { DialogTitle(title) },
         text = {
             Box(
                 modifier = Modifier
@@ -57,11 +61,13 @@ fun GitHubFileBrowserDialog(
             ) {
                 when {
                     isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                    error != null -> Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(8.dp)
-                    )
+                    error != null -> SelectionContainer {
+                        Text(
+                            text = error,
+                            color = ZasTheme.colors.errorText,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
                     else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                         if (currentPath.isNotEmpty()) {
                             item {
@@ -73,13 +79,12 @@ fun GitHubFileBrowserDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        Icons.Default.ArrowUpward,
-                                        contentDescription = "上へ",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.primary
+                                        painterResource(R.drawable.subdirectory_arrow_right_rotated),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp)
                                     )
                                     Spacer(Modifier.width(8.dp))
-                                    Text("..")
+                                    Text("上へ")
                                 }
                                 Divider()
                             }
@@ -97,12 +102,12 @@ fun GitHubFileBrowserDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (entry.isFolder) Icons.Default.Folder
-                                                  else Icons.Default.InsertDriveFile,
+                                    painter = if (entry.isFolder) painterResource(R.drawable.folder)
+                                              else rememberVectorPainter(Icons.Default.InsertDriveFile),
                                     contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(24.dp),
                                     tint = when {
-                                        entry.isFolder -> MaterialTheme.colorScheme.primary
+                                        entry.isFolder -> ZasTheme.colors.accent
                                         selectable -> MaterialTheme.colorScheme.onSurface
                                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                                     }
@@ -133,7 +138,7 @@ fun GitHubFileBrowserDialog(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        "フォルダが空です",
+                                        "このフォルダは空です",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -145,13 +150,13 @@ fun GitHubFileBrowserDialog(
         },
         confirmButton = {
             if (onSelectFolder != null) {
-                TextButton(onClick = { onSelectFolder(currentPath) }) {
-                    Text("このフォルダに設定")
+                ZasTextButton(onClick = { onSelectFolder(currentPath) }) {
+                    Text("このフォルダを保存先にする")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            ZasTextButton(onClick = onDismiss) { Text("キャンセル") }
         }
     )
 }

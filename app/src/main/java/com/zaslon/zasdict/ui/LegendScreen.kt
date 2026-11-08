@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,6 +26,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import com.zaslon.zasdict.data.DictionaryStore
@@ -69,9 +69,7 @@ fun LegendScreen(vm: MainViewModel, navController: NavController, snackbarHostSt
             TopAppBar(
                 title = { Text("凡例") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
+                    BackButton(onClick = { navController.popBackStack() })
                 }
             )
         }
@@ -86,7 +84,7 @@ fun LegendScreen(vm: MainViewModel, navController: NavController, snackbarHostSt
         ) {
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("品詞", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("品詞", style = MaterialTheme.typography.titleMedium, color = ZasTheme.colors.accent)
                     Const.VALID_POS.forEach { pos ->
                         Row(modifier = Modifier.fillMaxWidth()) {
                             Text(pos, fontWeight = FontWeight.Medium, modifier = Modifier.padding(end = 8.dp))
@@ -102,7 +100,7 @@ fun LegendScreen(vm: MainViewModel, navController: NavController, snackbarHostSt
 
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("関係と対照関係", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("関係と対照関係", style = MaterialTheme.typography.titleMedium, color = ZasTheme.colors.accent)
                     Const.VALID_RELATIONS.forEach { rel ->
                         val reciprocal = Const.RECIPROCAL_MAP[rel] ?: rel
                         Text(
@@ -115,7 +113,7 @@ fun LegendScreen(vm: MainViewModel, navController: NavController, snackbarHostSt
 
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("辞書統計", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("辞書統計", style = MaterialTheme.typography.titleMedium, color = ZasTheme.colors.accent)
                     Text("総語数: ${vm.wordCount}", fontWeight = FontWeight.Medium)
                     if (stats.first.isNotEmpty()) {
                         Divider()

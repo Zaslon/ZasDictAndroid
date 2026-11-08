@@ -17,32 +17,23 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,7 +45,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,11 +59,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.DraftExample
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.R
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 import org.json.JSONObject
 
 // ------------------------------------------------------------------
@@ -106,26 +104,19 @@ fun ExamplesScreen(
             TopAppBar(
                 title = { Text("例文") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
+                    BackButton(onClick = { navController.popBackStack() })
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
+            ZasFab(
                 onClick = {
                     vm.startNewExample()
                     if (vm.exampleDraft != null) navController.navigate(Routes.EXAMPLE_EDITOR)
                 },
-                elevation = if (einkMode) {
-                    FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
-                } else {
-                    FloatingActionButtonDefaults.elevation()
-                }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "例文を追加")
-            }
+                icon = rememberVectorPainter(Icons.Default.Add),
+                contentDescription = "例文を追加"
+            )
         }
     ) { padding ->
         Column(
@@ -134,14 +125,15 @@ fun ExamplesScreen(
                 .padding(padding)
         ) {
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = query,
                 onValueChange = { query = it },
                 label = { Text("例文・訳を検索") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                leadingIcon = { Icon(painterResource(R.drawable.search), contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "クリア")
+                            Icon(painterResource(R.drawable.close), contentDescription = "検索語を消去")
                         }
                     }
                 },
@@ -153,7 +145,7 @@ fun ExamplesScreen(
 
             if (filtered.isEmpty()) {
                 Text(
-                    text = if (allExamples.isEmpty()) "例文がありません。＋ボタンで追加してください。"
+                    text = if (allExamples.isEmpty()) "例文がありません。「例文を追加」ボタンで追加してください。"
                            else "一致する例文がありません。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -191,7 +183,8 @@ private fun SectionHeader(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary
+        color = ZasTheme.colors.accent,
+        modifier = Modifier.semantics { heading() }
     )
 }
 
@@ -258,7 +251,6 @@ fun ExampleEditorScreen(
     val isSelfCatalog = offerCatalog == Const.EXAMPLE_CATALOG_SELF
 
     var showWordPicker by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     // 照会結果を受け取ってフォームに反映する
     LaunchedEffect(vm.zpdicOfferResult) {
@@ -311,8 +303,13 @@ fun ExampleEditorScreen(
                 },
                 actions = {
                     if (!isNew) {
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "削除")
+                        // 削除は通知の「元に戻す」で取り消せるので、確認を挟まない
+                        IconButton(onClick = {
+                            draft.originalId?.let { vm.deleteExample(it) }
+                            vm.discardExampleDraft()
+                            navController.popBackStack()
+                        }) {
+                            Icon(Icons.Default.Delete, contentDescription = "例文を削除")
                         }
                     }
                     IconButton(onClick = {
@@ -322,7 +319,7 @@ fun ExampleEditorScreen(
                             navController.popBackStack()
                         }
                     }) {
-                        Icon(Icons.Default.Check, contentDescription = "保存")
+                        Icon(Icons.Default.Check, contentDescription = "登録")
                     }
                 }
             )
@@ -347,6 +344,7 @@ fun ExampleEditorScreen(
             // 補足文は常に出しておき、エラーの文と入れ替える（出し入れすると下の欄の位置が動く）
             val sentenceMissing = showSentenceError && sentence.isBlank()
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = sentence,
                 onValueChange = { sentence = it },
                 label = { Text("文") },
@@ -358,6 +356,7 @@ fun ExampleEditorScreen(
             )
 
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = translation,
                 onValueChange = { translation = it },
                 label = { Text("訳") },
@@ -366,6 +365,7 @@ fun ExampleEditorScreen(
             )
 
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = supplement,
                 onValueChange = { supplement = it },
                 label = { Text("補足") },
@@ -374,6 +374,7 @@ fun ExampleEditorScreen(
             )
 
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = tags,
                 onValueChange = { tags = it },
                 label = { Text("タグ（,区切り）") },
@@ -396,8 +397,8 @@ fun ExampleEditorScreen(
                             label = { Text(form, fontFamily = vm.headwordFontFamily) },
                             trailingIcon = {
                                 Icon(
-                                    Icons.Default.Clear,
-                                    contentDescription = "削除",
+                                    painterResource(R.drawable.close),
+                                    contentDescription = "${form}を関連単語から外す",
                                     modifier = Modifier.clickable { linkedWords.removeAt(index) }
                                 )
                             }
@@ -405,7 +406,7 @@ fun ExampleEditorScreen(
                     }
                 }
             }
-            OutlinedButton(onClick = { showWordPicker = true }) {
+            ZasOutlinedButton(onClick = { showWordPicker = true }) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("単語を追加")
             }
@@ -419,6 +420,7 @@ fun ExampleEditorScreen(
                 onExpandedChange = { catalogExpanded = it }
             ) {
                 OutlinedTextField(
+                    colors = zasTextFieldColors(),
                     value = catalogLabel,
                     onValueChange = {},
                     readOnly = true,
@@ -432,7 +434,8 @@ fun ExampleEditorScreen(
                 )
                 ExposedDropdownMenu(
                     expanded = catalogExpanded,
-                    onDismissRequest = { catalogExpanded = false }
+                    onDismissRequest = { catalogExpanded = false },
+                    modifier = Modifier.einkFocusFrame()
                 ) {
                     Const.EXAMPLE_CATALOG_OPTIONS.forEach { (key, label) ->
                         DropdownMenuItem(
@@ -464,6 +467,7 @@ fun ExampleEditorScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
+                        colors = zasTextFieldColors(),
                         value = if (offerNumber == 0) "" else offerNumber.toString(),
                         onValueChange = { v ->
                             if (v.all { it.isDigit() }) {
@@ -476,7 +480,7 @@ fun ExampleEditorScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
-                    TextButton(
+                    ZasTextButton(
                         onClick = { vm.fetchZpdicOffer(offerCatalog, offerNumber) },
                         enabled = !vm.zpdicOfferFetching
                     ) { Text("照会") }
@@ -486,9 +490,9 @@ fun ExampleEditorScreen(
                         text = vm.zpdicOfferStatus,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (vm.zpdicOfferStatus.startsWith("照会成功"))
-                            MaterialTheme.colorScheme.primary
+                            MaterialTheme.colorScheme.onSurface
                         else
-                            MaterialTheme.colorScheme.error
+                            ZasTheme.colors.errorText
                     )
                 }
             }
@@ -511,27 +515,5 @@ fun ExampleEditorScreen(
         )
     }
 
-    // 削除確認ダイアログ
-    if (showDeleteConfirm) {
-        val preview = sentence.take(30) + if (sentence.length > 30) "…" else ""
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("例文を削除") },
-            text = { Text("「$preview」を削除しますか？") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirm = false
-                        draft.originalId?.let { vm.deleteExample(it) }
-                        navController.popBackStack()
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("削除する") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("キャンセル") }
-            }
-        )
-    }
 }
 

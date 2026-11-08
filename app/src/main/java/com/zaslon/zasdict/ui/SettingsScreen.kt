@@ -10,26 +10,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -45,10 +42,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.data.Prefs
 import com.zaslon.zasdict.data.StorageMode
+import com.zaslon.zasdict.ui.theme.ThemeMode
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import kotlin.math.roundToInt
 
@@ -86,9 +88,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
             TopAppBar(
                 title = { Text("設定") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
+                    BackButton(onClick = { navController.popBackStack() })
                 }
             )
         }
@@ -116,40 +116,16 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        SegmentedButton(
-                            selected = vm.storageMode == StorageMode.LOCAL,
-                            onClick = {
-                                if (vm.storageMode != StorageMode.LOCAL)
-                                    vm.updateStorageMode(StorageMode.LOCAL)
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 4)
-                        ) { Text("ローカル") }
-                        SegmentedButton(
-                            selected = vm.storageMode == StorageMode.DROPBOX,
-                            onClick = {
-                                if (vm.storageMode != StorageMode.DROPBOX)
-                                    vm.updateStorageMode(StorageMode.DROPBOX)
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 4)
-                        ) { Text("Dropbox") }
-                        SegmentedButton(
-                            selected = vm.storageMode == StorageMode.GITHUB,
-                            onClick = {
-                                if (vm.storageMode != StorageMode.GITHUB)
-                                    vm.updateStorageMode(StorageMode.GITHUB)
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 4)
-                        ) { Text("GitHub") }
-                        SegmentedButton(
-                            selected = vm.storageMode == StorageMode.BOX,
-                            onClick = {
-                                if (vm.storageMode != StorageMode.BOX)
-                                    vm.updateStorageMode(StorageMode.BOX)
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index = 3, count = 4)
-                        ) { Text("Box") }
-                    }
+                    RadioGroup(
+                        options = listOf(
+                            StorageMode.LOCAL to "ローカル",
+                            StorageMode.DROPBOX to "Dropbox",
+                            StorageMode.GITHUB to "GitHub",
+                            StorageMode.BOX to "Box"
+                        ),
+                        selected = vm.storageMode,
+                        onSelect = { if (vm.storageMode != it) vm.updateStorageMode(it) }
+                    )
                 }
             }
 
@@ -164,8 +140,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                         if (vm.dropboxConnected) {
                             Text(
                                 "接続済み${if (!vm.dropboxDisplayName.isNullOrEmpty()) "：${vm.dropboxDisplayName}" else ""}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             if (!vm.dropboxDictName.isNullOrEmpty()) {
                                 Text(
@@ -178,11 +153,11 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 Text(
                                     "ローカルキャッシュにDropboxへ未同期の変更があります",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.tertiary
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            TextButton(onClick = { vm.disconnectDropbox() }) {
-                                Text("接続を解除", color = MaterialTheme.colorScheme.error)
+                            ZasTextButton(onClick = { vm.disconnectDropbox() }) {
+                                Text("接続を解除", color = ZasTheme.colors.errorText)
                             }
                         } else {
                             Text(
@@ -192,13 +167,14 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = dropboxAppKeyInput,
                                 onValueChange = { dropboxAppKeyInput = it },
                                 label = { Text("App Key") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Button(
+                            ZasButton(
                                 onClick = {
                                     vm.updateDropboxAppKey(dropboxAppKeyInput)
                                     vm.launchDropboxAuth(context)
@@ -223,8 +199,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                         if (vm.githubConnected) {
                             Text(
                                 "接続済み：${vm.githubDisplayName ?: ""}（${vm.prefs.githubOwner}/${vm.prefs.githubRepo}）",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             if (!vm.githubDictName.isNullOrEmpty()) {
                                 Text(
@@ -237,11 +212,11 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 Text(
                                     "ローカルキャッシュにGitHubへ未同期の変更があります",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.tertiary
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            TextButton(onClick = { vm.disconnectGitHub() }) {
-                                Text("接続を解除", color = MaterialTheme.colorScheme.error)
+                            ZasTextButton(onClick = { vm.disconnectGitHub() }) {
+                                Text("接続を解除", color = ZasTheme.colors.errorText)
                             }
                         } else {
                             Text(
@@ -250,6 +225,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = githubTokenInput,
                                 onValueChange = { githubTokenInput = it },
                                 label = { Text("Personal Access Token") },
@@ -257,6 +233,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = githubOwnerInput,
                                 onValueChange = { githubOwnerInput = it },
                                 label = { Text("オーナー（ユーザー名 / Org名）") },
@@ -264,6 +241,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = githubRepoInput,
                                 onValueChange = { githubRepoInput = it },
                                 label = { Text("リポジトリ名") },
@@ -271,13 +249,14 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = githubBranchInput,
                                 onValueChange = { githubBranchInput = it },
                                 label = { Text("ブランチ（省略時: main）") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Button(
+                            ZasButton(
                                 onClick = {
                                     vm.connectGitHub(
                                         githubTokenInput,
@@ -308,8 +287,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                         if (vm.boxConnected) {
                             Text(
                                 "接続済み${if (!vm.boxDisplayName.isNullOrEmpty()) "：${vm.boxDisplayName}" else ""}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             if (!vm.boxDictName.isNullOrEmpty()) {
                                 Text(
@@ -322,11 +300,11 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 Text(
                                     "ローカルキャッシュにBoxへ未同期の変更があります",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.tertiary
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            TextButton(onClick = { vm.disconnectBox() }) {
-                                Text("接続を解除", color = MaterialTheme.colorScheme.error)
+                            ZasTextButton(onClick = { vm.disconnectBox() }) {
+                                Text("接続を解除", color = ZasTheme.colors.errorText)
                             }
                         } else {
                             Text(
@@ -336,6 +314,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = boxClientIdInput,
                                 onValueChange = { boxClientIdInput = it },
                                 label = { Text("Client ID") },
@@ -343,13 +322,14 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
+                                colors = zasTextFieldColors(),
                                 value = boxClientSecretInput,
                                 onValueChange = { boxClientSecretInput = it },
                                 label = { Text("Client Secret") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Button(
+                            ZasButton(
                                 onClick = {
                                     vm.updateBoxClientId(boxClientIdInput)
                                     vm.updateBoxClientSecret(boxClientSecretInput)
@@ -365,11 +345,39 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
             }
 
             // ----------------------------------------------------------
-            // フォントサイズ
+            // 配色
             // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("フォントサイズ", style = MaterialTheme.typography.titleSmall)
+                    Text("配色", style = MaterialTheme.typography.titleSmall)
+                    // E-inkモードの間は白黒に固定されるため選べない。隠すと選択肢の存在が分からなくなるので、無効にして理由を示す。
+                    if (vm.einkMode) {
+                        Text(
+                            "E-inkモードの間は白黒で表示します。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    val themeOptions = listOf(
+                        ThemeMode.SYSTEM to "端末に従う",
+                        ThemeMode.LIGHT to "ライト",
+                        ThemeMode.DARK to "ダーク"
+                    )
+                    RadioGroup(
+                        options = themeOptions,
+                        selected = vm.themeMode,
+                        onSelect = { vm.updateThemeMode(it) },
+                        enabled = !vm.einkMode
+                    )
+                }
+            }
+
+            // ----------------------------------------------------------
+            // 文字の大きさ
+            // ----------------------------------------------------------
+            ZasCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("文字の大きさ", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "倍率: ${(vm.fontScale * 100).roundToInt()}%",
                         style = MaterialTheme.typography.bodyMedium
@@ -377,12 +385,10 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                     Slider(
                         value = vm.fontScale,
                         onValueChange = { vm.updateFontScale(it) },
-                        valueRange = 0.8f..1.8f,
-                        steps = 9
-                    )
-                    Text(
-                        "サンプル：あいうえお abcde",
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize * vm.fontScale
+                        valueRange = Prefs.FONT_SCALE_MIN..Prefs.FONT_SCALE_MAX,
+                        // 10% 刻み
+                        steps = 9,
+                        modifier = Modifier.semantics { contentDescription = "文字の倍率" }
                     )
                 }
             }
@@ -429,7 +435,7 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                         checked = vm.useIdyerFont,
                         onCheckedChange = { vm.updateUseIdyerFont(it) }
                     )
-                    OutlinedButton(onClick = {
+                    ZasOutlinedButton(onClick = {
                         fontPickLauncher.launch(arrayOf("font/ttf", "application/x-font-ttf", "application/octet-stream", "*/*"))
                     }) {
                         Text(if (vm.hasIdyerFontFile()) "フォントファイル（.ttf）を再選択" else "フォントファイル（.ttf）を選択")
@@ -438,14 +444,14 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                         Text(
                             "フォントファイルが未取込のため、標準フォントで表示されます。",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = ZasTheme.colors.errorText
                         )
                     }
                     if (vm.useIdyerFont && vm.idyerFontFamily != null) {
                         Text(
                             "サンプル：eaoiu heksa",
                             fontFamily = vm.idyerFontFamily,
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize * vm.fontScale
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
@@ -458,21 +464,21 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ZpDIC Online APIキー", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "ZpDIC Online のAPIキーを登録すると、例文編集画面で出典の照会・一覧取得ができます。",
+                        "ZpDIC Online のAPIキーを設定すると、例文編集画面で出典の照会・一覧取得ができます。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (vm.zpdicApiKeySet) {
                         Text(
-                            "APIキー登録済み",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            "APIキー設定済み",
+                            style = MaterialTheme.typography.bodyMedium
                         )
-                        TextButton(onClick = { vm.clearZpdicApiKey() }) {
-                            Text("APIキーを削除", color = MaterialTheme.colorScheme.error)
+                        ZasTextButton(onClick = { vm.clearZpdicApiKey() }) {
+                            Text("APIキーを削除", color = ZasTheme.colors.errorText)
                         }
                     } else {
                         OutlinedTextField(
+                            colors = zasTextFieldColors(),
                             value = zpdicApiKeyInput,
                             onValueChange = { zpdicApiKeyInput = it },
                             label = { Text("APIキー") },
@@ -484,23 +490,60 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                                     Icon(
                                         if (zpdicKeyVisible) Icons.Default.VisibilityOff
                                         else Icons.Default.Visibility,
-                                        contentDescription = if (zpdicKeyVisible) "非表示" else "表示"
+                                        contentDescription = if (zpdicKeyVisible) "APIキーを隠す" else "APIキーを表示"
                                     )
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Button(
+                        ZasButton(
                             onClick = {
                                 vm.saveZpdicApiKey(zpdicApiKeyInput)
                                 zpdicApiKeyInput = ""
                             },
                             enabled = zpdicApiKeyInput.isNotBlank()
                         ) {
-                            Text("保存")
+                            Text("APIキーを設定")
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * ラジオグループ。状態を選択肢の言葉で示す。
+ * 選択肢を横に並べると、狭い画面や文字の倍率を上げたときに選択肢の文字が折り返して枠からはみ出すため、縦に並べる。
+ * 行全体を押せるようにし、支援技術にはひとまとまりの選択肢として伝える。
+ */
+@Composable
+private fun <T> RadioGroup(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    enabled: Boolean = true
+) {
+    Column(modifier = Modifier.selectableGroup()) {
+        options.forEach { (value, label) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .selectable(
+                        selected = value == selected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(value) }
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = value == selected, onClick = null, enabled = enabled)
+                Text(
+                    label,
+                    modifier = Modifier.padding(start = 12.dp),
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else ZasTheme.colors.disabledText
+                )
             }
         }
     }

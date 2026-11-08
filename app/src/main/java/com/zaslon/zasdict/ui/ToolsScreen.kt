@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -19,6 +19,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -32,6 +34,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 import com.zaslon.zasdict.domain.Ipa
@@ -52,20 +55,29 @@ fun ToolsScreen(vm: MainViewModel, navController: NavController, initialTab: Int
             TopAppBar(
                 title = { Text("ツール") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
+                    BackButton(onClick = { navController.popBackStack() })
                 }
             )
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = selectedTab) {
+            TabRow(
+                selectedTabIndex = selectedTab,
+                indicator = { positions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(positions[selectedTab]),
+                        color = ZasTheme.colors.accent
+                    )
+                }
+            ) {
                 tabs.forEachIndexed { index, title ->
+                    // 選択中のタブの文字は、塗り用のアクセント（primary）ではダークで 4.5:1 に届かないため文字用に替える
                     Tab(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        text = { Text(title) }
+                        text = { Text(title) },
+                        selectedContentColor = ZasTheme.colors.accent,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -103,6 +115,7 @@ private fun DialectConvertTab(vm: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         OutlinedTextField(
+            colors = zasTextFieldColors(),
             value = input,
             onValueChange = { input = it },
             label = { Text("元単語（アクセントは大文字）") },
@@ -112,7 +125,7 @@ private fun DialectConvertTab(vm: MainViewModel) {
 
         if (result != null) {
             if (result.containsKey("error")) {
-                Text("エラー: ${result["error"]}", color = MaterialTheme.colorScheme.error)
+                Text("エラー: ${result["error"]}", color = ZasTheme.colors.errorText)
             } else {
                 ConvertResultCard("旗艦方言 (Sekore)", result["sekore"] ?: "")
                 ConvertResultCard("資源循環艦方言 (Titauini)", result["titauini"] ?: "")
@@ -130,13 +143,16 @@ private fun ConvertResultCard(title: String, value: String) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = ZasTheme.colors.accent
             )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
+            // 変換結果は辞書の編集等に貼り付けるため、選択してコピーできるようにする
+            SelectionContainer {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }
@@ -163,6 +179,7 @@ private fun IpaConvertTab() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         OutlinedTextField(
+            colors = zasTextFieldColors(),
             value = input,
             onValueChange = { input = it },
             label = { Text("IPA を入力") },

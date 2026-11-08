@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ダークの color-background（bg-dark-0）。アプリ内で配色を「ライト」にしていても、起動の一瞬だけは端末の設定に従う。 -->
+    <style name="Theme.ZasDict" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/zas_background_dark</item>
+    </style>
+    <color name="zas_background_dark">#FF181818</color>
+</resources>

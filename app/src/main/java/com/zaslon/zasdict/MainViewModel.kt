@@ -20,6 +20,7 @@ import com.zaslon.zasdict.data.GitHubApiClient
 import com.zaslon.zasdict.data.HttpStatusException
 import com.zaslon.zasdict.data.Prefs
 import com.zaslon.zasdict.data.SafIo
+import com.zaslon.zasdict.ui.theme.ThemeMode
 import com.zaslon.zasdict.data.SearchEngine
 import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.data.ZpdicApiClient
@@ -70,17 +71,22 @@ data class EditorDraft(
 /** 閉じるまで他の操作をさせない失敗の通知。見過ごすと変更が失われる失敗に使う。 */
 data class ErrorNotice(val title: String, val body: String)
 
+/** 通知の種類。デザインシステムの SSIP コードの Semantic に当たり、添えるアイコンを決める。 */
+enum class Semantic { INF, SUC, WRN, ERR }
+
 /**
  * スナックバー（縦に狭い画面のステータスバー）に出す通知。
- * 失敗は文言だけでも分かるように書いたうえで、[isFailure] で色も変える。
+ * 失敗は文言だけでも分かるように書いたうえで、色とアイコンでも示す。
  * [actionLabel] があれば、通知に操作ボタン（削除直後の「元に戻す」等）を付ける。
  */
 data class AppMessage(
     val text: String,
-    val isFailure: Boolean = false,
+    val semantic: Semantic = Semantic.INF,
     val actionLabel: String? = null,
     val onAction: (() -> Unit)? = null
-)
+) {
+    val isFailure: Boolean get() = semantic == Semantic.ERR
+}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -224,6 +230,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var einkMode by mutableStateOf(prefs.einkMode)
         private set
+    var themeMode by mutableStateOf(prefs.themeMode)
+        private set
     var idyerFontFamily by mutableStateOf<FontFamily?>(null)
         private set
 
@@ -363,7 +371,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun consumeMessage() { message = null }
-    private fun post(msg: String, isFailure: Boolean = false) { message = AppMessage(msg, isFailure) }
+    /** 操作の結果の通知。失敗でなければ成功として示す。 */
+    private fun post(msg: String, isFailure: Boolean = false) {
+        message = AppMessage(msg, if (isFailure) Semantic.ERR else Semantic.SUC)
+    }
+    /** 操作の成否ではなく、状態を知らせる通知 */
+    private fun postInfo(msg: String) { message = AppMessage(msg, Semantic.INF) }
     private fun postFailure(msg: String) = post(msg, isFailure = true)
 
     fun dismissError() { errorNotice = null }
@@ -408,6 +421,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val isDictionaryLoaded: Boolean
         get() = fileName != null && store.isLoaded
 
+    /** 端末内の辞書ファイルを読んでいる間 true。起動直後の一覧が空なのを「辞書が無い」と誤って伝えないために使う。 */
+    var isReadingDictionary by mutableStateOf(false)
+        private set
+
     /** 見出し語表示用フォント（Heksa有効時のみカスタムフォント） */
     val headwordFontFamily: FontFamily?
         get() = if (useIdyerFont) idyerFontFamily else null
@@ -448,7 +465,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.Main) {
                 hasUnsavedChanges = true
                 wordCount = store.wordCount()
-                post("保存されていなかった編集内容を復元しました")
+                postInfo("保存されていなかった編集内容を復元しました")
             }
         } catch (e: Exception) {
             // 読めない退避は次の起動でも読めないので、残さない
@@ -493,18 +510,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun loadDictionaryFromUri(uri: Uri) {
-        val resolver = getApplication<Application>().contentResolver
-        val text = resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            ?: throw IllegalStateException("ファイルを開けません")
-        store.loadFromString(text)
-        engine.rebuild()
-        currentUri = uri
-        changelog.setDictionary(uri.toString())
-        val name = queryDisplayName(uri)
-        withContext(Dispatchers.Main) {
-            fileName = name
-            hasUnsavedChanges = false
-            wordCount = store.wordCount()
+        withContext(Dispatchers.Main) { isReadingDictionary = true }
+        try {
+            val resolver = getApplication<Application>().contentResolver
+            val text = resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                ?: throw IllegalStateException("ファイルを開けません")
+            store.loadFromString(text)
+            engine.rebuild()
+            currentUri = uri
+            changelog.setDictionary(uri.toString())
+            val name = queryDisplayName(uri)
+            withContext(Dispatchers.Main) {
+                fileName = name
+                hasUnsavedChanges = false
+                wordCount = store.wordCount()
+            }
+        } finally {
+            withContext(Dispatchers.Main) { isReadingDictionary = false }
         }
     }
 
@@ -890,7 +912,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     wordCount = store.wordCount()
                     dropboxHasPendingUpload = hasPending
-                    if (hasPending) post("ローカルキャッシュを復元しました（Dropboxへの未同期があります）")
+                    if (hasPending) postInfo("ローカルキャッシュを復元しました（Dropboxへの未同期があります）")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { postError("端末内の辞書を復元できませんでした", e) }
@@ -1215,7 +1237,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     wordCount = store.wordCount()
                     githubHasPendingUpload = hasPending
-                    if (hasPending) post("ローカルキャッシュを復元しました（GitHubへの未同期があります）")
+                    if (hasPending) postInfo("ローカルキャッシュを復元しました（GitHubへの未同期があります）")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { postError("端末内の辞書を復元できませんでした", e) }
@@ -1559,7 +1581,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     wordCount = store.wordCount()
                     boxHasPendingUpload = hasPending
-                    if (hasPending) post("ローカルキャッシュを復元しました（Boxへの未同期があります）")
+                    if (hasPending) postInfo("ローカルキャッシュを復元しました（Boxへの未同期があります）")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { postError("端末内の辞書を復元できませんでした", e) }
@@ -2035,7 +2057,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val trimmed = key.trim()
         prefs.zpdicApiKey = trimmed.ifEmpty { null }
         zpdicApiKeySet = trimmed.isNotEmpty()
-        if (trimmed.isNotEmpty()) post("ZpDIC APIキーを保存しました")
+        if (trimmed.isNotEmpty()) post("ZpDIC APIキーを設定しました")
     }
 
     fun clearZpdicApiKey() {
@@ -2127,7 +2149,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         deletedForm: String?
     ) {
         val after = store.toJsonString()
-        message = AppMessage(text, actionLabel = "元に戻す") { undoDelete(before, after, pendingBefore, deletedForm) }
+        message = AppMessage(text, Semantic.SUC, actionLabel = "元に戻す") { undoDelete(before, after, pendingBefore, deletedForm) }
     }
 
     private fun undoDelete(
@@ -2161,8 +2183,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun updateFontScale(scale: Float) {
-        fontScale = scale
-        prefs.fontScale = scale
+        val clamped = scale.coerceIn(Prefs.FONT_SCALE_MIN, Prefs.FONT_SCALE_MAX)
+        fontScale = clamped
+        prefs.fontScale = clamped
+    }
+
+    fun updateThemeMode(mode: ThemeMode) {
+        themeMode = mode
+        prefs.themeMode = mode
     }
 
     fun updateAutoSave(enabled: Boolean) {

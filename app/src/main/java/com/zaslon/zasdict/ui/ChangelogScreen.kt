@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
@@ -22,11 +21,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,9 +36,11 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
 /**
  * 更新履歴画面。ローカル/Dropboxモードで表示内容を切り替える。
@@ -87,16 +86,14 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
             TopAppBar(
                 title = { Text("更新履歴") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
+                    BackButton(onClick = { navController.popBackStack() })
                 },
                 actions = {
                     if (canClear) {
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = if (clearsPendingOnly) "未保存の変更を取り消す" else "履歴をクリア"
+                                contentDescription = if (clearsPendingOnly) "未保存の変更を取り消す" else "更新履歴を削除"
                             )
                         }
                     }
@@ -129,7 +126,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                         Text(
                             text = "Boxモード",
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = ZasTheme.colors.accent
                         )
                         if (dictName != null) {
                             val csvName = "${dictName.removeSuffix(".json")}_changelog.csv"
@@ -153,11 +150,11 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        OutlinedButton(onClick = { vm.openBoxBrowserForChangelog() }) {
+                        ZasOutlinedButton(onClick = { vm.openBoxBrowserForChangelog() }) {
                             Text(if (changelogFileId != null) "保存先を変更" else "保存先を設定")
                         }
                         if (changelogFileId != null) {
-                            OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
+                            ZasOutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
                                 Text("Boxから更新履歴を読み込む")
                             }
                         }
@@ -167,7 +164,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                         Text(
                             text = "GitHubモード",
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = ZasTheme.colors.accent
                         )
                         if (changelogPath != null) {
                             Text(
@@ -187,11 +184,11 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        OutlinedButton(onClick = { vm.openGitHubBrowserForChangelog() }) {
+                        ZasOutlinedButton(onClick = { vm.openGitHubBrowserForChangelog() }) {
                             Text(if (changelogPath != null) "保存先を変更" else "保存先を設定")
                         }
                         if (changelogPath != null) {
-                            OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
+                            ZasOutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
                                 Text("GitHubから更新履歴を読み込む")
                             }
                         }
@@ -201,7 +198,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                         Text(
                             text = "Dropboxモード",
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = ZasTheme.colors.accent
                         )
                         if (changelogPath != null) {
                             Text(
@@ -221,11 +218,11 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        OutlinedButton(onClick = { vm.openDropboxBrowserForChangelog() }) {
+                        ZasOutlinedButton(onClick = { vm.openDropboxBrowserForChangelog() }) {
                             Text(if (changelogPath != null) "保存先を変更" else "保存先を設定")
                         }
                         if (changelogPath != null) {
-                            OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
+                            ZasOutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
                                 Text("Dropboxから更新履歴を読み込む")
                             }
                         }
@@ -235,14 +232,14 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                             Text(
                                 text = "連携中: $linkedName",
                                 style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = ZasTheme.colors.accent
                             )
                             Text(
                                 text = "辞書の保存（自動上書き保存を含む）と連動して、このCSVへ自動で追記されます。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            TextButton(onClick = { vm.unlinkChangelogCsv() }) {
+                            ZasTextButton(onClick = { vm.unlinkChangelogCsv() }) {
                                 Text("連携を解除（アプリ内部保存に戻す）")
                             }
                         } else {
@@ -258,7 +255,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            OutlinedButton(onClick = {
+                            ZasOutlinedButton(onClick = {
                                 linkLauncher.launch(arrayOf(
                                     "text/csv",
                                     "text/comma-separated-values",
@@ -278,7 +275,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                 Text(
                     text = "未保存の変更が ${pending.size} 件あります（辞書を保存すると履歴に記録されます）",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(12.dp)
                 )
                 Divider()
@@ -376,21 +373,19 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
         }
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text(if (clearsPendingOnly) "未保存の変更を取り消す" else "履歴を削除") },
+            modifier = Modifier.einkFocusFrame(),
+            title = { DialogTitle(if (clearsPendingOnly) "未保存の変更を取り消す" else "更新履歴を削除") },
             text = { Text(clearMessage) },
             confirmButton = {
-                TextButton(onClick = {
+                ZasDestructiveButton(onClick = {
                     vm.clearChangelogHistory()
                     showClearDialog = false
                 }) {
-                    Text(
-                        if (clearsPendingOnly) "取り消す" else "削除",
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Text(if (clearsPendingOnly) "取り消す" else "削除する")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
+                ZasTextButton(onClick = { showClearDialog = false }) {
                     Text("キャンセル")
                 }
             }
@@ -416,7 +411,7 @@ private fun ChangelogRow(
             Text(
                 text = type,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = ZasTheme.colors.accent,
                 fontWeight = FontWeight.Bold
             )
         }

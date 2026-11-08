@@ -2,6 +2,7 @@ package com.zaslon.zasdict.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.zaslon.zasdict.ui.theme.ThemeMode
 
 /**
  * 環境設定の永続化（デスクトップ版 settings.ini 相当）。
@@ -16,10 +17,19 @@ class Prefs(context: Context) {
         get() = sp.getString("last_dictionary", null)
         set(value) = sp.edit().putString("last_dictionary", value).apply()
 
-    /** フォントサイズ倍率（デスクトップ版のフォントサイズ設定に相当） */
+    /**
+     * 文字の倍率。見出し語だけでなく UI の全ての文字に掛かる。
+     * 以前は 0.8 から選べたため、範囲外の保存値は読むときに範囲へ収める。
+     */
     var fontScale: Float
-        get() = sp.getFloat("font_scale", 1.0f)
+        get() = sp.getFloat("font_scale", 1.0f).coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
         set(value) = sp.edit().putFloat("font_scale", value).apply()
+
+    /** 配色（端末の設定に従う／ライト／ダーク） */
+    var themeMode: ThemeMode
+        get() = ThemeMode.entries.find { it.name == sp.getString("theme_mode", null) }
+            ?: ThemeMode.SYSTEM
+        set(value) = sp.edit().putString("theme_mode", value.name).apply()
 
     /** 自動上書き保存 */
     var autoSave: Boolean
@@ -219,4 +229,10 @@ class Prefs(context: Context) {
         get() = sp.getString("zpdic_api_key", null)
         set(value) = if (value == null) sp.edit().remove("zpdic_api_key").apply()
                      else sp.edit().putString("zpdic_api_key", value).apply()
+
+    companion object {
+        // デザインシステムの規則で、文字の倍率は 100%〜200% とする
+        const val FONT_SCALE_MIN = 1.0f
+        const val FONT_SCALE_MAX = 2.0f
+    }
 }

@@ -23,13 +23,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,11 +38,14 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.DraftContent
 import com.zaslon.zasdict.DraftRelation
 import com.zaslon.zasdict.DraftTranslation
@@ -54,6 +54,7 @@ import com.zaslon.zasdict.EditorDraft
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
 /**
  * 単語編集画面（editor.py の EntryEditorDialog に相当）。
@@ -146,7 +147,7 @@ fun EditorScreen(
                         } else if (vm.commitDraft(buildDraft())) {
                             navController.popBackStack()
                         }
-                    }) { Icon(Icons.Default.Check, contentDescription = "保存") }
+                    }) { Icon(Icons.Default.Check, contentDescription = "登録") }
                 }
             )
         }
@@ -163,6 +164,7 @@ fun EditorScreen(
             // 補足文は常に出しておき、エラーの文と入れ替える（出し入れすると下の欄の位置が動く）
             val formMissing = showFormError && form.isBlank()
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = form,
                 onValueChange = { form = it },
                 label = { Text("見出し語") },
@@ -175,6 +177,7 @@ fun EditorScreen(
 
             // 発音記号
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = pronunciation,
                 onValueChange = { pronunciation = it },
                 label = { Text("発音記号") },
@@ -196,6 +199,7 @@ fun EditorScreen(
                         modifier = Modifier.width(140.dp)
                     )
                     OutlinedTextField(
+                        colors = zasTextFieldColors(),
                         value = t.forms,
                         onValueChange = { translations[index] = t.copy(forms = it) },
                         label = { Text("訳語（,区切り）") },
@@ -203,11 +207,11 @@ fun EditorScreen(
                         singleLine = true
                     )
                     IconButton(onClick = { translations.removeAt(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "削除")
+                        Icon(Icons.Default.Delete, contentDescription = "訳語を削除")
                     }
                 }
             }
-            OutlinedButton(onClick = { translations.add(DraftTranslation()) }) {
+            ZasOutlinedButton(onClick = { translations.add(DraftTranslation()) }) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("訳語を追加")
             }
@@ -231,10 +235,11 @@ fun EditorScreen(
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { contents.removeAt(index) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "削除")
+                            Icon(Icons.Default.Delete, contentDescription = "${c.title.ifEmpty { "内容" }}を削除")
                         }
                     }
                     OutlinedTextField(
+                        colors = zasTextFieldColors(),
                         value = c.text,
                         onValueChange = { contents[index] = c.copy(text = it) },
                         label = { Text("本文") },
@@ -247,7 +252,7 @@ fun EditorScreen(
                 Const.CONTENT_TYPES.forEach { title ->
                     val exists = contents.any { it.title == title }
                     // 追加済みのものは隠さず無効にする（隠すと下のボタンの位置がずれる）
-                    OutlinedButton(
+                    ZasOutlinedButton(
                         enabled = !exists,
                         onClick = {
                             contents.add(DraftContent(title = title))
@@ -277,7 +282,6 @@ fun EditorScreen(
                     )
                     // 入力欄は自分でタップを受けてしまうため enabled = false で外側の clickable に渡す。
                     // 無効の色のままだと押せない欄に見えるので、色だけ有効時のものに戻す。
-                    val scheme = MaterialTheme.colorScheme
                     OutlinedTextField(
                         value = r.targetForm.ifEmpty { "（未選択）" },
                         onValueChange = { },
@@ -287,20 +291,21 @@ fun EditorScreen(
                             .weight(1f)
                             .clickable { showRelationPicker = index },
                         enabled = false,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            disabledTextColor = scheme.onSurface,
-                            disabledBorderColor = scheme.outline,
-                            disabledLabelColor = scheme.onSurfaceVariant
+                        colors = zasTextFieldColors().copy(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledIndicatorColor = ZasTheme.colors.inputBorder,
+                            disabledLabelColor = ZasTheme.colors.textSecondary,
+                            disabledContainerColor = ZasTheme.colors.inputBackground
                         ),
                         textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
                     )
-                    TextButton(onClick = { showRelationPicker = index }) { Text("選択") }
+                    ZasTextButton(onClick = { showRelationPicker = index }) { Text("選択") }
                     IconButton(onClick = { relations.removeAt(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "削除")
+                        Icon(Icons.Default.Delete, contentDescription = "関連語を削除")
                     }
                 }
             }
-            OutlinedButton(onClick = { relations.add(DraftRelation()) }) {
+            ZasOutlinedButton(onClick = { relations.add(DraftRelation()) }) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("関連語を追加")
             }
@@ -314,6 +319,7 @@ fun EditorScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
+                        colors = zasTextFieldColors(),
                         value = v.title,
                         onValueChange = { variations[index] = v.copy(title = it) },
                         label = { Text("名称") },
@@ -321,6 +327,7 @@ fun EditorScreen(
                         singleLine = true
                     )
                     OutlinedTextField(
+                        colors = zasTextFieldColors(),
                         value = v.form,
                         onValueChange = { variations[index] = v.copy(form = it) },
                         label = { Text("形") },
@@ -329,11 +336,11 @@ fun EditorScreen(
                         textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
                     )
                     IconButton(onClick = { variations.removeAt(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "削除")
+                        Icon(Icons.Default.Delete, contentDescription = "変化形を削除")
                     }
                 }
             }
-            OutlinedButton(onClick = { variations.add(DraftVariation()) }) {
+            ZasOutlinedButton(onClick = { variations.add(DraftVariation()) }) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("変化形を追加")
             }
@@ -341,6 +348,7 @@ fun EditorScreen(
             // ----------------------------------------------------------
             SectionHeader("タグ")
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = tags,
                 onValueChange = { tags = it },
                 label = { Text("タグ（,区切り）") },
@@ -371,7 +379,8 @@ private fun SectionHeader(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary
+        color = ZasTheme.colors.accent,
+        modifier = Modifier.semantics { heading() }
     )
 }
 
@@ -381,6 +390,7 @@ private fun PosDropdown(value: String, onValueChange: (String) -> Unit, modifier
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
         OutlinedTextField(
+            colors = zasTextFieldColors(),
             value = value,
             onValueChange = { },
             readOnly = true,
@@ -388,7 +398,7 @@ private fun PosDropdown(value: String, onValueChange: (String) -> Unit, modifier
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.menuAnchor()
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.einkFocusFrame()) {
             Const.VALID_POS.forEach { pos ->
                 DropdownMenuItem(
                     text = { Text(pos) },
@@ -405,6 +415,7 @@ private fun RelationDropdown(value: String, onValueChange: (String) -> Unit, mod
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
         OutlinedTextField(
+            colors = zasTextFieldColors(),
             value = value,
             onValueChange = { },
             readOnly = true,
@@ -412,7 +423,7 @@ private fun RelationDropdown(value: String, onValueChange: (String) -> Unit, mod
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.menuAnchor()
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.einkFocusFrame()) {
             Const.VALID_RELATIONS.forEach { rel ->
                 DropdownMenuItem(
                     text = { Text(rel) },

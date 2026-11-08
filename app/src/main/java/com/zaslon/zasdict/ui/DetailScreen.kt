@@ -13,12 +13,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,11 +32,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.R
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.domain.Const
@@ -60,7 +60,6 @@ fun DetailScreen(
     onSelectWord: ((Int?) -> Unit)? = null
 ) {
     val word = vm.wordById(wordId)
-    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val einkMode = LocalEinkMode.current
 
@@ -70,8 +69,6 @@ fun DetailScreen(
 
     val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
-    val scale = vm.fontScale
-
     Scaffold(
         snackbarHost = { if (!isPane) AppSnackbarHost(snackbarHostState) },
         topBar = {
@@ -79,9 +76,7 @@ fun DetailScreen(
                 title = { Text("詳細") },
                 navigationIcon = {
                     if (!isPane) {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                        }
+                        BackButton(onClick = { navController.popBackStack() })
                     }
                 },
                 actions = {
@@ -91,19 +86,23 @@ fun DetailScreen(
                         IconButton(onClick = {
                             navController.popBackStack(Routes.SEARCH, inclusive = false)
                         }) {
-                            Icon(Icons.Default.Home, contentDescription = "ホーム")
+                            Icon(painterResource(R.drawable.house_line), contentDescription = "ホーム")
                         }
                     }
                     IconButton(onClick = {
                         vm.startEditEntry(wordId)
                         if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
-                    }) { Icon(Icons.Default.Edit, contentDescription = "編集") }
+                    }) { Icon(Icons.Default.Edit, contentDescription = "単語を編集") }
                     IconButton(onClick = {
                         vm.startDuplicateEntry(wordId)
                         if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
-                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "複製") }
-                    IconButton(onClick = { showDeleteConfirm = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "削除")
+                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "単語を複製") }
+                    IconButton(onClick = {
+                        vm.deleteWord(wordId)
+                        if (isPane) onSelectWord?.invoke(null)
+                        else navController.popBackStack()
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = "単語を削除")
                     }
                 }
             )
@@ -127,9 +126,7 @@ fun DetailScreen(
             // --- form ---
             Text(
                 text = DictionaryStore.formOf(word),
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = MaterialTheme.typography.headlineMedium.fontSize * scale
-                ),
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 fontFamily = vm.headwordFontFamily
             )
@@ -138,9 +135,7 @@ fun DetailScreen(
             DictionaryStore.pronunciationOf(word)?.let { pron ->
                 Text(
                     text = "/$pron/",
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize * scale
-                    ),
+                    style = MaterialTheme.typography.bodyLarge,
                     fontStyle = FontStyle.Italic,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -153,9 +148,7 @@ fun DetailScreen(
                     translations.forEachIndexed { i, (title, forms) ->
                         Text(
                             text = "${i + 1}. $title：${forms.joinToString(", ")}",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = MaterialTheme.typography.bodyLarge.fontSize * scale
-                            )
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
@@ -169,13 +162,11 @@ fun DetailScreen(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = ZasTheme.colors.accent
                     )
                     Text(
                         text = text,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = MaterialTheme.typography.bodyMedium.fontSize * scale
-                        )
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -187,14 +178,12 @@ fun DetailScreen(
                     Text(
                         text = "変化形",
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = ZasTheme.colors.accent
                     )
                     variations.forEach { (title, form) ->
                         Text(
                             text = "$title：$form",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = MaterialTheme.typography.bodyMedium.fontSize * scale
-                            ),
+                            style = MaterialTheme.typography.bodyMedium,
                             fontFamily = vm.headwordFontFamily
                         )
                     }
@@ -213,7 +202,7 @@ fun DetailScreen(
                         Text(
                             text = "【$title】",
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = ZasTheme.colors.accent
                         )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             targets.forEach { (tid, tform) ->
@@ -239,7 +228,7 @@ fun DetailScreen(
             if (tags.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     tags.forEach { tag ->
-                        AssistChip(onClick = { }, label = { Text(tag) })
+                        ZasTag(tag)
                     }
                 }
             }
@@ -251,7 +240,7 @@ fun DetailScreen(
                     Text(
                         text = "参照例文",
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = ZasTheme.colors.accent
                     )
                     examples.forEach { ex ->
                         Column(
@@ -269,18 +258,14 @@ fun DetailScreen(
                         ) {
                             Text(
                                 text = ex.optString("sentence", ""),
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = MaterialTheme.typography.bodyMedium.fontSize * scale
-                                ),
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = vm.headwordFontFamily
                             )
                             val exTranslation = ex.optString("translation", "")
                             if (exTranslation.isNotEmpty()) {
                                 Text(
                                     text = exTranslation,
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontSize = MaterialTheme.typography.bodySmall.fontSize * scale
-                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -293,16 +278,4 @@ fun DetailScreen(
         }
     }
 
-    if (showDeleteConfirm) {
-        DeleteConfirmDialog(
-            form = word?.let { DictionaryStore.formOf(it) } ?: "",
-            onConfirm = {
-                showDeleteConfirm = false
-                vm.deleteWord(wordId)
-                if (isPane) onSelectWord?.invoke(null)
-                else navController.popBackStack()
-            },
-            onDismiss = { showDeleteConfirm = false }
-        )
-    }
 }

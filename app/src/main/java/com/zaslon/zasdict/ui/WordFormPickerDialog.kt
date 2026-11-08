@@ -14,7 +14,6 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
 /**
  * 前方一致検索で単語を選ぶ共通ダイアログ（関連語・関連単語選択などで共用）。
@@ -60,10 +60,12 @@ fun WordFormPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        modifier = Modifier.einkFocusFrame(),
+        title = { DialogTitle(title) },
         text = {
             Column {
                 OutlinedTextField(
+                    colors = zasTextFieldColors(),
                     value = query,
                     onValueChange = { query = it },
                     label = { Text("前方一致で検索") },
@@ -99,7 +101,7 @@ fun WordFormPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            ZasTextButton(onClick = onDismiss) { Text("キャンセル") }
         }
     )
 }

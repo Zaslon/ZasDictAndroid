@@ -1,10 +1,13 @@
 package com.zaslon.zasdict
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
@@ -23,13 +26,15 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -40,6 +45,7 @@ import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.zaslon.zasdict.ui.AppSnackbarVisuals
 import com.zaslon.zasdict.ui.ChangelogScreen
+import com.zaslon.zasdict.ui.DialogTitle
 import com.zaslon.zasdict.ui.DetailScreen
 import com.zaslon.zasdict.ui.DictionarySettingsScreen
 import com.zaslon.zasdict.ui.EditorScreen
@@ -50,7 +56,11 @@ import com.zaslon.zasdict.ui.SearchScreen
 import com.zaslon.zasdict.ui.SettingsScreen
 import com.zaslon.zasdict.ui.ToolsScreen
 import com.zaslon.zasdict.ui.VolumeKeyScroller
+import com.zaslon.zasdict.ui.ZasTextButton
 import com.zaslon.zasdict.ui.theme.ZasDictTheme
+import com.zaslon.zasdict.ui.theme.ZasTheme
+import com.zaslon.zasdict.ui.theme.isDarkTheme
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
 object Routes {
     const val SEARCH = "search"
@@ -78,7 +88,18 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 if (launchedFresh) vm.discardStashedDrafts()
             }
-            ZasDictTheme(einkMode = vm.einkMode) {
+            val dark = isDarkTheme(vm.einkMode, vm.themeMode)
+            // OS のステータスバー・ナビゲーションバーの文字の明暗を、アプリの配色に合わせる
+            DisposableEffect(dark) {
+                enableEdgeToEdge(
+                    statusBarStyle = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+                                     else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+                    navigationBarStyle = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+                                         else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                )
+                onDispose { }
+            }
+            ZasDictTheme(einkMode = vm.einkMode, themeMode = vm.themeMode, fontScale = vm.fontScale) {
                 ZasDictApp(vm)
             }
         }
@@ -116,7 +137,8 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val configuration = LocalConfiguration.current
-    val isTablet = configuration.screenWidthDp.toFloat() >= configuration.screenHeightDp.toFloat() * 1.5f
+    // breakpoint-split 以上の幅では、一覧と詳細を並べる
+    val isTablet = configuration.screenWidthDp >= 768
 
     // 新しい通知が来ると、表示中の通知は取り下げられて最新の 1 件だけが出る
     LaunchedEffect(vm.message) {
@@ -139,7 +161,8 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
     if (vm.promptRelinkChangelog) {
         AlertDialog(
             onDismissRequest = { vm.dismissRelinkPrompt() },
-            title = { Text("更新履歴CSVの再連携") },
+            modifier = Modifier.einkFocusFrame(),
+            title = { DialogTitle("更新履歴CSVの再連携") },
             text = {
                 Text(
                     "保存先が変わったため、更新履歴CSVとの連携を解除しました。" +
@@ -149,13 +172,13 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                ZasTextButton(onClick = {
                     vm.dismissRelinkPrompt()
                     navController.navigate(Routes.CHANGELOG)
                 }) { Text("更新履歴画面を開く") }
             },
             dismissButton = {
-                TextButton(onClick = { vm.dismissRelinkPrompt() }) { Text("後で") }
+                ZasTextButton(onClick = { vm.dismissRelinkPrompt() }) { Text("閉じる") }
             }
         )
     }
@@ -163,11 +186,20 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
     vm.errorNotice?.let { notice ->
         AlertDialog(
             onDismissRequest = { vm.dismissError() },
-            title = { Text(notice.title) },
+            modifier = Modifier.einkFocusFrame(),
+            // 失敗であることを、文言に加えてアイコンでも示す
+            icon = {
+                Icon(
+                    painterResource(R.drawable.error),
+                    contentDescription = "エラー",
+                    tint = ZasTheme.colors.notificationError
+                )
+            },
+            title = { DialogTitle(notice.title) },
             // 問い合わせや検索に使えるよう、原因の文は選択してコピーできるようにする
             text = { SelectionContainer { Text(notice.body) } },
             confirmButton = {
-                TextButton(onClick = { vm.dismissError() }) { Text("閉じる") }
+                ZasTextButton(onClick = { vm.dismissError() }) { Text("閉じる") }
             }
         )
     }
@@ -176,10 +208,10 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
     NavHost(
         navController = navController,
         startDestination = Routes.SEARCH,
-        enterTransition = { if (eink) EnterTransition.None else fadeIn(animationSpec = tween(220)) },
-        exitTransition = { if (eink) ExitTransition.None else fadeOut(animationSpec = tween(220)) },
-        popEnterTransition = { if (eink) EnterTransition.None else fadeIn(animationSpec = tween(220)) },
-        popExitTransition = { if (eink) ExitTransition.None else fadeOut(animationSpec = tween(220)) }
+        enterTransition = { if (eink) EnterTransition.None else fadeIn(animationSpec = tween(200)) },
+        exitTransition = { if (eink) ExitTransition.None else fadeOut(animationSpec = tween(200)) },
+        popEnterTransition = { if (eink) EnterTransition.None else fadeIn(animationSpec = tween(200)) },
+        popExitTransition = { if (eink) ExitTransition.None else fadeOut(animationSpec = tween(200)) }
     ) {
         composable(Routes.SEARCH) {
             if (isTablet) {
@@ -242,11 +274,12 @@ private fun TabletSearchDetailLayout(
                 selectedWordId = vm.tabletSelectedWordId
             )
         }
+        // 一覧と詳細の境界。面の境界には弱い区切り線ではなく枠線の色を使う。
         Box(
             modifier = Modifier
                 .width(1.dp)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.outlineVariant)
+                .background(ZasTheme.colors.border)
         )
         Box(modifier = Modifier.weight(1f)) {
             val selectedId = vm.tabletSelectedWordId
@@ -263,11 +296,11 @@ private fun TabletSearchDetailLayout(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface),
+                        .background(MaterialTheme.colorScheme.background),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "単語を選んでください",
+                        text = "単語を選んでください。",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

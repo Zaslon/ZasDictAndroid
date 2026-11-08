@@ -13,23 +13,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,9 +47,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -56,12 +61,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.BuildConfig
 import com.zaslon.zasdict.MainViewModel
+import com.zaslon.zasdict.R
 import com.zaslon.zasdict.Routes
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
-import org.json.JSONObject
+import com.zaslon.zasdict.ui.theme.ZasTheme
+import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -74,7 +81,6 @@ fun SearchScreen(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var contextMenuFor by remember { mutableStateOf<Int?>(null) }
-    var deleteConfirmFor by remember { mutableStateOf<JSONObject?>(null) }
     var showVersionDialog by remember { mutableStateOf(false) }
 
     val einkMode = LocalEinkMode.current
@@ -95,7 +101,14 @@ fun SearchScreen(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri -> uri?.let { vm.saveAs(it) } }
 
-    val baseFontSize = MaterialTheme.typography.bodyLarge.fontSize * vm.fontScale
+    val baseFontSize = MaterialTheme.typography.bodyLarge.fontSize
+
+    // TopAppBar の既定高さ(64dp)は固定で、タイトル+語数の2行を拡大文字で入れると下の行が潰れる。
+    // 行高さ(sp)を dp に換算して、端末の文字サイズ設定に応じて高さを広げる。
+    val appBarHeight = with(LocalDensity.current) {
+        (MaterialTheme.typography.titleMedium.lineHeight.toDp() +
+            MaterialTheme.typography.labelSmall.lineHeight.toDp() + 16.dp)
+    }.coerceAtLeast(TopAppBarDefaults.TopAppBarExpandedHeight)
 
     // Dropboxブラウザダイアログ
     if (vm.dropboxBrowserTarget == "dict") {
@@ -149,6 +162,7 @@ fun SearchScreen(
         snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
+                expandedHeight = appBarHeight,
                 title = {
                     Column {
                         Text(
@@ -174,8 +188,7 @@ fun SearchScreen(
                         IconButton(onClick = { vm.uploadToDropbox() }, enabled = !vm.isSyncing) {
                             Icon(
                                 Icons.Default.CloudUpload,
-                                contentDescription = "Dropboxに保存",
-                                tint = MaterialTheme.colorScheme.tertiary
+                                contentDescription = "Dropboxに保存"
                             )
                         }
                     }
@@ -183,8 +196,7 @@ fun SearchScreen(
                         IconButton(onClick = { vm.uploadToGitHub() }, enabled = !vm.isSyncing) {
                             Icon(
                                 Icons.Default.CloudUpload,
-                                contentDescription = "GitHubにコミット",
-                                tint = MaterialTheme.colorScheme.tertiary
+                                contentDescription = "GitHubにコミット"
                             )
                         }
                     }
@@ -192,8 +204,7 @@ fun SearchScreen(
                         IconButton(onClick = { vm.uploadToBox() }, enabled = !vm.isSyncing) {
                             Icon(
                                 Icons.Default.CloudUpload,
-                                contentDescription = "Boxに保存",
-                                tint = MaterialTheme.colorScheme.tertiary
+                                contentDescription = "Boxに保存"
                             )
                         }
                     }
@@ -202,7 +213,8 @@ fun SearchScreen(
                     }
                     DropdownMenu(
                         expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
+                        onDismissRequest = { menuExpanded = false },
+                        modifier = Modifier.einkFocusFrame()
                     ) {
                         if (isDropbox) {
                             // Dropboxモードのメニュー
@@ -303,29 +315,15 @@ fun SearchScreen(
             )
         },
         floatingActionButton = {
-            // FloatingActionButton には enabled が無いため、無効の見た目と動作を自前で付ける
-            val canAdd = vm.isDictionaryLoaded
-            val disabledColor = MaterialTheme.colorScheme.onSurface
-            FloatingActionButton(
+            ZasFab(
                 onClick = {
-                    if (!canAdd) return@FloatingActionButton
                     vm.startNewEntry(vm.searchText)
                     if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
                 },
-                modifier = Modifier.semantics { if (!canAdd) disabled() },
-                // FAB はアクセント色（primary）で塗る。既定の primaryContainer は淡く、他のボタンに紛れる。
-                containerColor = if (canAdd) MaterialTheme.colorScheme.primary
-                                 else disabledColor.copy(alpha = 0.12f),
-                contentColor = if (canAdd) MaterialTheme.colorScheme.onPrimary
-                               else disabledColor.copy(alpha = 0.38f),
-                elevation = if (einkMode || !canAdd) {
-                    FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
-                } else {
-                    FloatingActionButtonDefaults.elevation()
-                }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "単語を追加")
-            }
+                icon = rememberVectorPainter(Icons.Default.Add),
+                contentDescription = "単語を追加",
+                enabled = vm.isDictionaryLoaded
+            )
         }
     ) { padding ->
         Column(
@@ -344,6 +342,7 @@ fun SearchScreen(
                 maxOf(56.dp, lineHeightDp + 36.dp)
             }
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = vm.searchText,
                 onValueChange = { vm.onSearchTextChanged(it) },
                 modifier = Modifier
@@ -353,7 +352,7 @@ fun SearchScreen(
                 placeholder = { Text("検索語を入力...", style = searchTextStyle) },
                 singleLine = true,
                 textStyle = searchTextStyle,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                leadingIcon = { Icon(painterResource(R.drawable.search), contentDescription = null) },
                 trailingIcon = {
                     val hasText = vm.searchText.isNotEmpty()
                     IconButton(
@@ -361,7 +360,7 @@ fun SearchScreen(
                         enabled = hasText,
                         modifier = Modifier.alpha(if (hasText) 1f else 0f)
                     ) {
-                        Icon(Icons.Default.Clear, contentDescription = "クリア")
+                        Icon(painterResource(R.drawable.close), contentDescription = "検索語を消去")
                     }
                 }
             )
@@ -377,7 +376,8 @@ fun SearchScreen(
                     FilterChip(
                         selected = vm.searchMode == mode,
                         onClick = { vm.onSearchModeChanged(mode) },
-                        label = { Text(mode) }
+                        label = { Text(mode) },
+                        leadingIcon = { SelectedMark(vm.searchMode == mode) }
                     )
                 }
             }
@@ -391,7 +391,8 @@ fun SearchScreen(
                     FilterChip(
                         selected = vm.searchScope == scope,
                         onClick = { vm.onSearchScopeChanged(scope) },
-                        label = { Text(scope) }
+                        label = { Text(scope) },
+                        leadingIcon = { SelectedMark(vm.searchScope == scope) }
                     )
                 }
             }
@@ -407,14 +408,23 @@ fun SearchScreen(
                 }
             }
 
-            if (vm.searchText.isNotEmpty() && displayItems.isEmpty()) {
+            // 一覧が空のときは、理由と次にすることを示す
+            val emptyMessage = when {
+                !vm.isDictionaryLoaded && (vm.isReadingDictionary || vm.isSyncing) -> "辞書を読み込んでいます。"
+                !vm.isDictionaryLoaded -> "辞書が開かれていません。メニューから辞書を開いてください。"
+                vm.searchText.isNotEmpty() && displayItems.isEmpty() ->
+                    if (vm.searchMode != "部分") "該当する見出し語はありません。検索モードを「部分」にしてみてください。"
+                    else "該当する見出し語はありません。"
+                else -> null
+            }
+            if (emptyMessage != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("該当する見出し語はありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(emptyMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -430,9 +440,10 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .then(
-                                    if (isSelected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+                                    if (isSelected) Modifier.background(ZasTheme.colors.selectedBackground)
                                     else Modifier
                                 )
+                                .semantics { selected = isSelected }
                                 .combinedClickable(
                                     onClick = {
                                         if (onWordClick != null) onWordClick(id)
@@ -445,8 +456,9 @@ fun SearchScreen(
                             Text(
                                 text = display,
                                 fontSize = baseFontSize,
-                                fontWeight = FontWeight.Medium,
-                                fontFamily = vm.headwordFontFamily
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontFamily = vm.headwordFontFamily,
+                                color = if (isSelected) ZasTheme.colors.onSelectedBackground else Color.Unspecified
                             )
                             val firstTranslation = DictionaryStore.translationsOf(word)
                                 .firstOrNull()
@@ -455,14 +467,17 @@ fun SearchScreen(
                                 Text(
                                     text = firstTranslation,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
+                                    color = if (isSelected) ZasTheme.colors.onSelectedBackground
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                         DropdownMenu(
                             expanded = contextMenuFor == id,
-                            onDismissRequest = { contextMenuFor = null }
+                            onDismissRequest = { contextMenuFor = null },
+                            modifier = Modifier.einkFocusFrame()
                         ) {
                             DropdownMenuItem(text = { Text("編集") }, onClick = {
                                 contextMenuFor = null
@@ -476,7 +491,7 @@ fun SearchScreen(
                             })
                             DropdownMenuItem(text = { Text("削除") }, onClick = {
                                 contextMenuFor = null
-                                deleteConfirmFor = word
+                                vm.deleteWord(id)
                             })
                         }
                     }
@@ -489,50 +504,44 @@ fun SearchScreen(
     if (showVersionDialog) {
         VersionDialog(onDismiss = { showVersionDialog = false })
     }
+}
 
-    deleteConfirmFor?.let { word ->
-        DeleteConfirmDialog(
-            form = DictionaryStore.formOf(word),
-            onConfirm = {
-                vm.deleteWord(DictionaryStore.idOf(word))
-                deleteConfirmFor = null
-            },
-            onDismiss = { deleteConfirmFor = null }
-        )
+/** 選択中のチップを、色だけでなく印でも示す */
+@Composable
+private fun SelectedMark(selected: Boolean) {
+    if (selected) {
+        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
     }
 }
 
 @Composable
 fun VersionDialog(onDismiss: () -> Unit) {
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("バージョン情報") },
+        modifier = Modifier.einkFocusFrame(),
+        title = { DialogTitle("バージョン情報") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text("ZasDict for Android", fontWeight = FontWeight.Bold)
                 Text("バージョン: ${BuildConfig.VERSION_NAME}")
+                // デジタル庁の素材の利用規約は、加工して使う場合に出典と加工内容の明示を求める
+                Text(
+                    "アイコンの一部は、「イラストレーション・アイコン素材」（デジタル庁）" +
+                        "（https://www.digital.go.jp/policies/servicedesign/designsystem/Illustration_Icons）" +
+                        "と「デザインシステム コード例（HTML版）」（デジタル庁、MIT License）を元に、" +
+                        "色を変更できるよう加工して使用しています。" +
+                        "その他のアイコンは Material Symbols（Google、Apache License 2.0）を元にしています。" +
+                        "ライセンス文はアプリに同梱しています。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("閉じる") }
-        }
-    )
-}
-
-@Composable
-fun DeleteConfirmDialog(form: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("単語を削除") },
-        text = { Text("「$form」を削除しますか？\n他の単語からの参照も削除されます。") },
-        confirmButton = {
-            androidx.compose.material3.TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-            ) { Text("削除する") }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("キャンセル") }
+            ZasTextButton(onClick = onDismiss) { Text("閉じる") }
         }
     )
 }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols「subdirectory_arrow_right」（Google、Apache License 2.0）を元に、左へ 90 度回転し、塗りを currentColor に変更した。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <group android:translateX="0" android:translateY="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M820 -560L777.23 -517.23L630 -665.08L630 -220L180 -220L180 -280L570 -280L570 -665.08L422.15 -517.23L379.39 -559.38L600 -780L820 -560Z"/>
+  </group>
+</vector>

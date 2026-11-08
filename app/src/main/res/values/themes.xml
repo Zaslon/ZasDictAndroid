@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ZasDict" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- 起動直後、Compose の描画が始まるまでの背景。アプリの color-background と同じ色にする。 -->
+    <style name="Theme.ZasDict" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
 </resources>

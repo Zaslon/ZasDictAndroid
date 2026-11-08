@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -24,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.MainViewModel
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
 
@@ -56,7 +56,8 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController, sn
                 navigationIcon = {
                     EditorCloseButton(
                         hasChanges = punctuations != initialPunctuations || ignoredPattern != initialIgnoredPattern,
-                        subject = "辞書依存設定"
+                        subject = "辞書依存設定",
+                        commitLabel = "適用"
                     ) { navController.popBackStack() }
                 }
             )
@@ -72,12 +73,13 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController, sn
         ) {
             if (!vm.store.isLoaded) {
                 Text(
-                    "先に辞書ファイルを開いてください。",
-                    color = MaterialTheme.colorScheme.error
+                    "辞書が開かれていません。先に辞書ファイルを開いてください。",
+                    color = ZasTheme.colors.errorText
                 )
             }
 
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = punctuations,
                 onValueChange = { punctuations = it },
                 label = { Text("区切り文字（1文字ずつ続けて入力）") },
@@ -87,6 +89,7 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController, sn
             )
 
             OutlinedTextField(
+                colors = zasTextFieldColors(),
                 value = ignoredPattern,
                 onValueChange = { ignoredPattern = it },
                 label = { Text("無視パターン（正規表現）") },
@@ -95,7 +98,7 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController, sn
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Button(
+            ZasButton(
                 onClick = {
                     vm.updateDictionarySettings(
                         punctuations = punctuations.map { it.toString() },
@@ -106,7 +109,7 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController, sn
                 enabled = vm.store.isLoaded,
                 modifier = Modifier.padding(top = 8.dp)
             ) {
-                Text("保存")
+                Text("適用")
             }
         }
     }
