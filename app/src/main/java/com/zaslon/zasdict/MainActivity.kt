@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +38,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.zaslon.zasdict.ui.AppSnackbarVisuals
 import com.zaslon.zasdict.ui.ChangelogScreen
 import com.zaslon.zasdict.ui.DetailScreen
 import com.zaslon.zasdict.ui.DictionarySettingsScreen
@@ -67,8 +71,13 @@ object Routes {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 保存された画面の状態が無い＝OS に終了されたのではなく、利用者が自分で閉じた後の起動
+        val launchedFresh = savedInstanceState == null
         setContent {
             val vm: MainViewModel = viewModel()
+            LaunchedEffect(Unit) {
+                if (launchedFresh) vm.discardStashedDrafts()
+            }
             ZasDictTheme(einkMode = vm.einkMode) {
                 ZasDictApp(vm)
             }
@@ -109,10 +118,21 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp.toFloat() >= configuration.screenHeightDp.toFloat() * 1.5f
 
+    // 新しい通知が来ると、表示中の通知は取り下げられて最新の 1 件だけが出る
     LaunchedEffect(vm.message) {
         vm.message?.let {
-            snackbarHostState.showSnackbar(it)
+            val result = snackbarHostState.showSnackbar(AppSnackbarVisuals(it))
             vm.consumeMessage()
+            if (result == SnackbarResult.ActionPerformed) it.onAction?.invoke()
+        }
+    }
+
+    // 処理中の表示は、処理が終わるまで出し続ける。終わると、この LaunchedEffect が取り消されて消える。
+    LaunchedEffect(vm.isSyncing) {
+        if (vm.isSyncing) {
+            snackbarHostState.showSnackbar(
+                AppSnackbarVisuals(AppMessage(vm.syncingStatus), duration = SnackbarDuration.Indefinite)
+            )
         }
     }
 
@@ -136,6 +156,18 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
             },
             dismissButton = {
                 TextButton(onClick = { vm.dismissRelinkPrompt() }) { Text("後で") }
+            }
+        )
+    }
+
+    vm.errorNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissError() },
+            title = { Text(notice.title) },
+            // 問い合わせや検索に使えるよう、原因の文は選択してコピーできるようにする
+            text = { SelectionContainer { Text(notice.body) } },
+            confirmButton = {
+                TextButton(onClick = { vm.dismissError() }) { Text("閉じる") }
             }
         )
     }
@@ -171,19 +203,19 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
             arguments = listOf(navArgument("tab") { type = NavType.IntType })
         ) { backStackEntry ->
             val tab = backStackEntry.arguments?.getInt("tab") ?: 0
-            ToolsScreen(vm, navController, tab)
+            ToolsScreen(vm, navController, tab, snackbarHostState)
         }
         composable(Routes.LEGEND) {
-            LegendScreen(vm, navController)
+            LegendScreen(vm, navController, snackbarHostState)
         }
         composable(Routes.CHANGELOG) {
-            ChangelogScreen(vm, navController)
+            ChangelogScreen(vm, navController, snackbarHostState)
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(vm, navController)
+            SettingsScreen(vm, navController, snackbarHostState)
         }
         composable(Routes.DICT_SETTINGS) {
-            DictionarySettingsScreen(vm, navController)
+            DictionarySettingsScreen(vm, navController, snackbarHostState)
         }
         composable(Routes.EXAMPLES) {
             ExamplesScreen(vm, navController, snackbarHostState)
@@ -235,7 +267,7 @@ private fun TabletSearchDetailLayout(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "単語を選択してください",
+                        text = "単語を選んでください",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

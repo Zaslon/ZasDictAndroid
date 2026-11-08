@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,7 +40,6 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,6 +61,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
 import com.zaslon.zasdict.DraftExample
 import com.zaslon.zasdict.MainViewModel
@@ -99,7 +101,7 @@ fun ExamplesScreen(
     val einkScrollConnection = rememberEinkNestedScrollConnection(listState)
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("例文") },
@@ -283,17 +285,28 @@ fun ExampleEditorScreen(
         offerNumber = offerNumber
     )
 
+    // 退避から戻した場合は、戻した内容がすでに編集済みなので、退避しておいた開いた時点の状態と比べる
+    val initialDraft = remember { vm.exampleDraftBaseline ?: buildDraft() }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        vm.stashExampleDraft(initialDraft, buildDraft())
+    }
+
+    // 保存を押すまでは空欄を咎めない
+    var showSentenceError by remember { mutableStateOf(false) }
+
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(if (isNew) "例文を追加" else "例文を編集") },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    EditorCloseButton(
+                        hasChanges = buildDraft() != initialDraft,
+                        subject = sentence.take(30) + if (sentence.length > 30) "…" else ""
+                    ) {
                         vm.discardExampleDraft()
                         navController.popBackStack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "キャンセル")
                     }
                 },
                 actions = {
@@ -303,7 +316,9 @@ fun ExampleEditorScreen(
                         }
                     }
                     IconButton(onClick = {
-                        if (vm.commitExampleDraft(buildDraft())) {
+                        if (sentence.isBlank()) {
+                            showSentenceError = true
+                        } else if (vm.commitExampleDraft(buildDraft())) {
                             navController.popBackStack()
                         }
                     }) {
@@ -329,10 +344,14 @@ fun ExampleEditorScreen(
                 )
             }
 
+            // 補足文は常に出しておき、エラーの文と入れ替える（出し入れすると下の欄の位置が動く）
+            val sentenceMissing = showSentenceError && sentence.isBlank()
             OutlinedTextField(
                 value = sentence,
                 onValueChange = { sentence = it },
-                label = { Text("文 *") },
+                label = { Text("文") },
+                isError = sentenceMissing,
+                supportingText = { Text(if (sentenceMissing) "文を入力してください" else "必須") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
                 textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
@@ -497,14 +516,17 @@ fun ExampleEditorScreen(
         val preview = sentence.take(30) + if (sentence.length > 30) "…" else ""
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("削除確認") },
+            title = { Text("例文を削除") },
             text = { Text("「$preview」を削除しますか？") },
             confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirm = false
-                    draft.originalId?.let { vm.deleteExample(it) }
-                    navController.popBackStack()
-                }) { Text("削除") }
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        draft.originalId?.let { vm.deleteExample(it) }
+                        navController.popBackStack()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除する") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("キャンセル") }

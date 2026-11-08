@@ -24,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,7 +48,7 @@ import com.zaslon.zasdict.ui.theme.LocalEinkMode
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
+fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHostState: SnackbarHostState) {
 
     val einkMode = LocalEinkMode.current
     val isDropbox = vm.storageMode == StorageMode.DROPBOX
@@ -81,6 +82,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
     ) { uri -> uri?.let { vm.linkChangelogCsv(it) } }
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("更新履歴") },
@@ -103,7 +105,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                             val base = vm.fileName?.removeSuffix(".json") ?: "dictionary"
                             exportLauncher.launch("${base}_changelog.csv")
                         }) {
-                            Icon(Icons.Default.FileDownload, contentDescription = "CSVエクスポート")
+                            Icon(Icons.Default.FileDownload, contentDescription = "更新履歴を書き出す")
                         }
                     }
                 }
@@ -139,7 +141,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                             )
                             if (changelogFileId != null) {
                                 Text(
-                                    text = "「Boxに保存」を実行すると辞書と一緒に更新履歴もBoxへアップロードされます。",
+                                    text = "「Boxに保存」を実行すると辞書と一緒に更新履歴もBoxに保存されます。",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -156,7 +158,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         }
                         if (changelogFileId != null) {
                             OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
-                                Text("Boxから更新履歴を再取得")
+                                Text("Boxから更新履歴を読み込む")
                             }
                         }
                     } else if (isGitHub) {
@@ -190,7 +192,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         }
                         if (changelogPath != null) {
                             OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
-                                Text("GitHubから更新履歴を再取得")
+                                Text("GitHubから更新履歴を読み込む")
                             }
                         }
                     } else if (isDropbox) {
@@ -208,7 +210,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "「Dropboxに保存」を実行すると辞書と一緒に更新履歴もDropboxへアップロードされます。",
+                                text = "「Dropboxに保存」を実行すると辞書と一緒に更新履歴もDropboxに保存されます。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -224,7 +226,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController) {
                         }
                         if (changelogPath != null) {
                             OutlinedButton(onClick = { vm.reloadChangelogFromCloud() }) {
-                                Text("Dropboxから更新履歴を再取得")
+                                Text("Dropboxから更新履歴を読み込む")
                             }
                         }
                     } else {

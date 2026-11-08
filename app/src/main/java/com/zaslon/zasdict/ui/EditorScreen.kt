@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -26,8 +25,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
 import com.zaslon.zasdict.DraftContent
 import com.zaslon.zasdict.DraftRelation
@@ -112,20 +113,37 @@ fun EditorScreen(
         variations = variations.toList()
     )
 
+    // ドラフトそのものではなく、画面を開いた時点の状態と比べる。
+    // 内容欄は開くときに並べ替えるため、ドラフトと比べると無編集でも差が出る。
+    // 退避から戻した場合は、戻した内容がすでに編集済みなので、退避しておいた開いた時点の状態と比べる。
+    val initialDraft = remember { vm.editorDraftBaseline ?: buildDraft() }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        vm.stashEditorDraft(initialDraft, buildDraft())
+    }
+
+    // 保存を押すまでは空欄を咎めない。開いた直後から赤くすると、まだ入力していないだけなのに失敗に見える。
+    var showFormError by remember { mutableStateOf(false) }
+
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(if (isNew) "新規登録" else "編集") },
+                title = { Text(if (isNew) "単語を追加" else "単語を編集") },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    EditorCloseButton(
+                        hasChanges = buildDraft() != initialDraft,
+                        subject = form.trim()
+                    ) {
                         vm.discardDraft()
                         navController.popBackStack()
-                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "キャンセル") }
+                    }
                 },
                 actions = {
                     IconButton(onClick = {
-                        if (vm.commitDraft(buildDraft())) {
+                        if (form.isBlank()) {
+                            showFormError = true
+                        } else if (vm.commitDraft(buildDraft())) {
                             navController.popBackStack()
                         }
                     }) { Icon(Icons.Default.Check, contentDescription = "保存") }
@@ -142,11 +160,15 @@ fun EditorScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // 見出し語
+            // 補足文は常に出しておき、エラーの文と入れ替える（出し入れすると下の欄の位置が動く）
+            val formMissing = showFormError && form.isBlank()
             OutlinedTextField(
                 value = form,
                 onValueChange = { form = it },
                 label = { Text("見出し語") },
                 singleLine = true,
+                isError = formMissing,
+                supportingText = { Text(if (formMissing) "見出し語を入力してください" else "必須") },
                 modifier = Modifier.fillMaxWidth(),
                 textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
             )
@@ -224,25 +246,24 @@ fun EditorScreen(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Const.CONTENT_TYPES.forEach { title ->
                     val exists = contents.any { it.title == title }
-                    // 追加済みのものはボタンを非表示にする
-                    if (!exists) {
-                        OutlinedButton(
-                            onClick = {
-                                contents.add(DraftContent(title = title))
-                                val sorted = contents.sortedBy { contentRank(it.title) }
-                                contents.clear()
-                                contents.addAll(sorted)
-                            }
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Text("${title}を追加")
+                    // 追加済みのものは隠さず無効にする（隠すと下のボタンの位置がずれる）
+                    OutlinedButton(
+                        enabled = !exists,
+                        onClick = {
+                            contents.add(DraftContent(title = title))
+                            val sorted = contents.sortedBy { contentRank(it.title) }
+                            contents.clear()
+                            contents.addAll(sorted)
                         }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("${title}を追加")
                     }
                 }
             }
 
             // ----------------------------------------------------------
-            SectionHeader("関係（対照関係は相手側にも自動登録されます）")
+            SectionHeader("関連語（対照関係は相手側にも自動登録されます）")
             relations.forEachIndexed { index, r ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -254,15 +275,23 @@ fun EditorScreen(
                         onValueChange = { relations[index] = r.copy(title = it) },
                         modifier = Modifier.width(130.dp)
                     )
+                    // 入力欄は自分でタップを受けてしまうため enabled = false で外側の clickable に渡す。
+                    // 無効の色のままだと押せない欄に見えるので、色だけ有効時のものに戻す。
+                    val scheme = MaterialTheme.colorScheme
                     OutlinedTextField(
                         value = r.targetForm.ifEmpty { "（未選択）" },
                         onValueChange = { },
                         readOnly = true,
-                        label = { Text("対象語") },
+                        label = { Text("関連語") },
                         modifier = Modifier
                             .weight(1f)
                             .clickable { showRelationPicker = index },
                         enabled = false,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = scheme.onSurface,
+                            disabledBorderColor = scheme.outline,
+                            disabledLabelColor = scheme.onSurfaceVariant
+                        ),
                         textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
                     )
                     TextButton(onClick = { showRelationPicker = index }) { Text("選択") }
@@ -273,7 +302,7 @@ fun EditorScreen(
             }
             OutlinedButton(onClick = { relations.add(DraftRelation()) }) {
                 Icon(Icons.Default.Add, contentDescription = null)
-                Text("関係を追加")
+                Text("関連語を追加")
             }
 
             // ----------------------------------------------------------
@@ -327,7 +356,7 @@ fun EditorScreen(
     showRelationPicker?.let { index ->
         WordFormPickerDialog(
             vm = vm,
-            title = "対象語を選択",
+            title = "関連語を選ぶ",
             onSelected = { id, formStr ->
                 relations[index] = relations[index].copy(targetId = id, targetForm = formStr)
                 showRelationPicker = null

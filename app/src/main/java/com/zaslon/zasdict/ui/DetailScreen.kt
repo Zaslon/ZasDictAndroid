@@ -17,13 +17,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -73,24 +73,27 @@ fun DetailScreen(
     val scale = vm.fontScale
 
     Scaffold(
-        snackbarHost = { if (!isPane) SnackbarHost(snackbarHostState) },
+        snackbarHost = { if (!isPane) AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("詳細") },
                 navigationIcon = {
                     if (!isPane) {
-                        IconButton(onClick = { 
-                            navController.navigate(Routes.SEARCH) {
-                                popUpTo(Routes.SEARCH) {
-                                    inclusive = false
-                                }
-                            }
-                        }) {
+                        IconButton(onClick = { navController.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                         }
                     }
                 },
                 actions = {
+                    // 関連語をたどって詳細が何枚も積み重なっても、一度で検索画面へ戻れるようにする。
+                    // 横長の 2 列表示では検索画面が隣に見えているので出さない。
+                    if (!isPane) {
+                        IconButton(onClick = {
+                            navController.popBackStack(Routes.SEARCH, inclusive = false)
+                        }) {
+                            Icon(Icons.Default.Home, contentDescription = "ホーム")
+                        }
+                    }
                     IconButton(onClick = {
                         vm.startEditEntry(wordId)
                         if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)

@@ -4,15 +4,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,11 +23,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -41,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.zaslon.zasdict.MainViewModel
@@ -53,7 +57,7 @@ import kotlin.math.roundToInt
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel, navController: NavController) {
+fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHostState: SnackbarHostState) {
 
     val einkMode = LocalEinkMode.current
     val context = LocalContext.current
@@ -77,9 +81,10 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
     var zpdicKeyVisible by remember { mutableStateOf(false) }
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("環境設定") },
+                title = { Text("設定") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
@@ -386,45 +391,31 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
             // E-inkモード
             // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("E-inkモードを有効にする", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "アニメーション・影・リップル効果を排除し、白黒の高コントラスト表示にします（電子ペーパー端末向け）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = vm.einkMode, onCheckedChange = { vm.updateEinkMode(it) })
-                }
+                CheckboxRow(
+                    title = "E-inkモードを有効にする",
+                    description = "アニメーション・影・リップル効果を排除し、白黒の高コントラスト表示にします（電子ペーパー端末向け）",
+                    checked = vm.einkMode,
+                    onCheckedChange = { vm.updateEinkMode(it) },
+                    contentPadding = PaddingValues(16.dp)
+                )
             }
 
             // ----------------------------------------------------------
             // 自動上書き保存
             // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("自動上書き保存を有効にする", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            when (vm.storageMode) {
-                                StorageMode.DROPBOX -> "編集のたびにローカルキャッシュへ自動保存します（Dropboxへのアップロードは手動）"
-                                StorageMode.GITHUB -> "編集のたびにローカルキャッシュへ自動保存します（GitHubへのコミットは手動）"
-                                StorageMode.BOX -> "編集のたびにローカルキャッシュへ自動保存します（Boxへのアップロードは手動）"
-                                else -> "編集のたびに辞書ファイルへ自動保存します"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = vm.autoSave, onCheckedChange = { vm.updateAutoSave(it) })
-                }
+                CheckboxRow(
+                    title = "自動上書き保存を有効にする",
+                    description = when (vm.storageMode) {
+                        StorageMode.DROPBOX -> "編集のたびにローカルキャッシュへ自動保存します（Dropboxへは「Dropboxに保存」で保存します）"
+                        StorageMode.GITHUB -> "編集のたびにローカルキャッシュへ自動保存します（GitHubへのコミットは手動）"
+                        StorageMode.BOX -> "編集のたびにローカルキャッシュへ自動保存します（Boxへは「Boxに保存」で保存します）"
+                        else -> "編集のたびに辞書ファイルへ自動保存します"
+                    },
+                    checked = vm.autoSave,
+                    onCheckedChange = { vm.updateAutoSave(it) },
+                    contentPadding = PaddingValues(16.dp)
+                )
             }
 
             // ----------------------------------------------------------
@@ -432,20 +423,12 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
             // ----------------------------------------------------------
             ZasCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Heksaを有効にする", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "見出し語・検索欄をイジェール文字フォントで表示します（.ttf形式のフォントファイルが必要です）",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(checked = vm.useIdyerFont, onCheckedChange = { vm.updateUseIdyerFont(it) })
-                    }
+                    CheckboxRow(
+                        title = "Heksaを有効にする",
+                        description = "見出し語・検索欄をイジェール文字フォントで表示します（.ttf形式のフォントファイルが必要です）",
+                        checked = vm.useIdyerFont,
+                        onCheckedChange = { vm.updateUseIdyerFont(it) }
+                    )
                     OutlinedButton(onClick = {
                         fontPickLauncher.launch(arrayOf("font/ttf", "application/x-font-ttf", "application/octet-stream", "*/*"))
                     }) {
@@ -519,6 +502,38 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController) {
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 説明付きのチェックボックス。文字の部分を押しても切り替わるよう、行全体を押せるようにする。
+ * スライドトグル（Switch）は、つまみの位置そのものが現在の状態を表してしまい、
+ * 押した結果を示すボタンと見分けが付かなくなるため使わない。
+ */
+@Composable
+private fun CheckboxRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange)
+            .padding(contentPadding),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
+        Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

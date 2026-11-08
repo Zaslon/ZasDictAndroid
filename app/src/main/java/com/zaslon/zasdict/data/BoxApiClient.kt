@@ -175,7 +175,7 @@ class BoxApiClient {
         val bodyStr = resp.body?.string() ?: throw IOException("Empty response")
         if (!resp.isSuccessful) {
             val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-            throw IOException("フォルダ一覧取得失敗 (${resp.code}): $msg")
+            throw HttpStatusException(resp.code, "フォルダ一覧取得失敗 (${resp.code}): $msg")
         }
         val arr = JSONObject(bodyStr).getJSONArray("entries")
         val entries = mutableListOf<FileEntry>()
@@ -207,7 +207,7 @@ class BoxApiClient {
         ).execute().use { resp ->
             val bodyStr = resp.body?.string() ?: throw IOException("空のレスポンス")
             if (!resp.isSuccessful) {
-                throw IOException("ダウンロード失敗 (${resp.code}): $bodyStr")
+                throw HttpStatusException(resp.code, "ダウンロード失敗 (${resp.code}): $bodyStr")
             }
             bodyStr
         }
@@ -255,7 +255,7 @@ class BoxApiClient {
                 }
                 if (!resp.isSuccessful) {
                     val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-                    throw IOException("アップロード失敗 (${resp.code}): $msg")
+                    throw HttpStatusException(resp.code, "アップロード失敗 (${resp.code}): $msg")
                 }
                 JSONObject(bodyStr).getJSONArray("entries").getJSONObject(0).getString("id")
             }
@@ -282,7 +282,7 @@ class BoxApiClient {
                 if (!resp.isSuccessful) {
                     val bodyStr = resp.body?.string() ?: ""
                     val msg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-                    throw IOException("アップロード失敗 (${resp.code}): $msg")
+                    throw HttpStatusException(resp.code, "アップロード失敗 (${resp.code}): $msg")
                 }
             }
         }

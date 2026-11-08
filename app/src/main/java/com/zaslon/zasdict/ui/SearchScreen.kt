@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -48,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -144,7 +146,7 @@ fun SearchScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -166,15 +168,7 @@ fun SearchScreen(
                     }
                 },
                 actions = {
-                    // 同期中は「同期中…」を表示し、保存操作を受け付けない
-                    if (vm.isSyncing) {
-                        Text(
-                            text = "同期中…",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-                    }
+                    // 通信中の表示はスナックバーに出す（MainActivity）。ここでは保存操作を止めるだけ。
                     // クラウドモード：未同期インジケータ
                     if (isDropbox && vm.dropboxHasPendingUpload) {
                         IconButton(onClick = { vm.uploadToDropbox() }, enabled = !vm.isSyncing) {
@@ -220,7 +214,7 @@ fun SearchScreen(
                                 menuExpanded = false
                                 vm.uploadToDropbox()
                             })
-                            DropdownMenuItem(text = { Text("Dropboxから再読込") }, enabled = !vm.isSyncing, onClick = {
+                            DropdownMenuItem(text = { Text("Dropboxから読み込む") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromDropbox()
                             })
@@ -234,7 +228,7 @@ fun SearchScreen(
                                 menuExpanded = false
                                 vm.uploadToGitHub()
                             })
-                            DropdownMenuItem(text = { Text("GitHubから再読込") }, enabled = !vm.isSyncing, onClick = {
+                            DropdownMenuItem(text = { Text("GitHubから読み込む") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromGitHub()
                             })
@@ -248,7 +242,7 @@ fun SearchScreen(
                                 menuExpanded = false
                                 vm.uploadToBox()
                             })
-                            DropdownMenuItem(text = { Text("Boxから再読込") }, enabled = !vm.isSyncing, onClick = {
+                            DropdownMenuItem(text = { Text("Boxから読み込む") }, enabled = !vm.isSyncing, onClick = {
                                 menuExpanded = false
                                 vm.reloadFromBox()
                             })
@@ -282,7 +276,7 @@ fun SearchScreen(
                             menuExpanded = false
                             navController.navigate(Routes.tools(0))
                         })
-                        DropdownMenuItem(text = { Text("IPA") }, onClick = {
+                        DropdownMenuItem(text = { Text("IPA → 綴り") }, onClick = {
                             menuExpanded = false
                             navController.navigate(Routes.tools(1))
                         })
@@ -291,7 +285,7 @@ fun SearchScreen(
                             navController.navigate(Routes.LEGEND)
                         })
                         Divider()
-                        DropdownMenuItem(text = { Text("環境設定") }, onClick = {
+                        DropdownMenuItem(text = { Text("設定") }, onClick = {
                             menuExpanded = false
                             navController.navigate(Routes.SETTINGS)
                         })
@@ -309,18 +303,28 @@ fun SearchScreen(
             )
         },
         floatingActionButton = {
+            // FloatingActionButton には enabled が無いため、無効の見た目と動作を自前で付ける
+            val canAdd = vm.isDictionaryLoaded
+            val disabledColor = MaterialTheme.colorScheme.onSurface
             FloatingActionButton(
                 onClick = {
+                    if (!canAdd) return@FloatingActionButton
                     vm.startNewEntry(vm.searchText)
                     if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
                 },
-                elevation = if (einkMode) {
+                modifier = Modifier.semantics { if (!canAdd) disabled() },
+                // FAB はアクセント色（primary）で塗る。既定の primaryContainer は淡く、他のボタンに紛れる。
+                containerColor = if (canAdd) MaterialTheme.colorScheme.primary
+                                 else disabledColor.copy(alpha = 0.12f),
+                contentColor = if (canAdd) MaterialTheme.colorScheme.onPrimary
+                               else disabledColor.copy(alpha = 0.38f),
+                elevation = if (einkMode || !canAdd) {
                     FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
                 } else {
                     FloatingActionButtonDefaults.elevation()
                 }
             ) {
-                Icon(Icons.Default.Add, contentDescription = "新規登録")
+                Icon(Icons.Default.Add, contentDescription = "単語を追加")
             }
         }
     ) { padding ->
@@ -410,7 +414,7 @@ fun SearchScreen(
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("該当する語がありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("該当する見出し語はありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -519,10 +523,13 @@ fun VersionDialog(onDismiss: () -> Unit) {
 fun DeleteConfirmDialog(form: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("削除の確認") },
+        title = { Text("単語を削除") },
         text = { Text("「$form」を削除しますか？\n他の単語からの参照も削除されます。") },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onConfirm) { Text("削除") }
+            androidx.compose.material3.TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) { Text("削除する") }
         },
         dismissButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) { Text("キャンセル") }

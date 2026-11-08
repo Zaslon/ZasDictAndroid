@@ -12,10 +12,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zaslon.zasdict.data.BoxApiClient
+import com.zaslon.zasdict.data.ChangelogEntry
 import com.zaslon.zasdict.data.ChangelogStore
 import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.data.DropboxApiClient
 import com.zaslon.zasdict.data.GitHubApiClient
+import com.zaslon.zasdict.data.HttpStatusException
 import com.zaslon.zasdict.data.Prefs
 import com.zaslon.zasdict.data.SafIo
 import com.zaslon.zasdict.data.SearchEngine
@@ -25,6 +27,7 @@ import com.zaslon.zasdict.domain.Const
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -64,6 +67,21 @@ data class EditorDraft(
     val variations: List<DraftVariation> = emptyList()
 )
 
+/** 閉じるまで他の操作をさせない失敗の通知。見過ごすと変更が失われる失敗に使う。 */
+data class ErrorNotice(val title: String, val body: String)
+
+/**
+ * スナックバー（縦に狭い画面のステータスバー）に出す通知。
+ * 失敗は文言だけでも分かるように書いたうえで、[isFailure] で色も変える。
+ * [actionLabel] があれば、通知に操作ボタン（削除直後の「元に戻す」等）を付ける。
+ */
+data class AppMessage(
+    val text: String,
+    val isFailure: Boolean = false,
+    val actionLabel: String? = null,
+    val onAction: (() -> Unit)? = null
+)
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val prefs = Prefs(app)
@@ -75,6 +93,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val githubClient = GitHubApiClient()
     private val boxClient = BoxApiClient()
     private val zpdicClient = ZpdicApiClient()
+
+    private val stash = UnsavedStash(app)
+
+    private class LocalStashRequest(
+        val uri: String,
+        val dictJson: String,
+        val pendingChangelog: List<ChangelogEntry>
+    )
+
+    // 退避は最新の内容さえ書ければよいので、書き込み待ちの古い依頼は捨てる。null は退避の削除。
+    private val localStashRequests = Channel<LocalStashRequest?>(Channel.CONFLATED)
 
     // ------------------------------------------------------------------
     // UI状態
@@ -94,10 +123,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var hasUnsavedChanges by mutableStateOf(false)
         private set
-    var message by mutableStateOf<String?>(null)
+    var message by mutableStateOf<AppMessage?>(null)
+        private set
+    var errorNotice by mutableStateOf<ErrorNotice?>(null)
+        private set
     var editorDraft by mutableStateOf<EditorDraft?>(null)
         private set
+    /** 退避から戻した編集画面の、画面を開いた時点の内容。戻した後も変更の有無を正しく判定するために使う。 */
+    var editorDraftBaseline: EditorDraft? = null
+        private set
     var exampleDraft by mutableStateOf<DraftExample?>(null)
+        private set
+    var exampleDraftBaseline: DraftExample? = null
         private set
 
     /**
@@ -107,13 +144,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var isSyncing by mutableStateOf(false)
         private set
 
+    /** 通信中に出し続ける表示 */
+    val syncingStatus: String
+        get() = when (storageMode) {
+            StorageMode.DROPBOX -> "Dropboxと通信しています…"
+            StorageMode.GITHUB -> "GitHubと通信しています…"
+            StorageMode.BOX -> "Boxと通信しています…"
+            StorageMode.LOCAL -> "通信しています…"
+        }
+
     /**
      * 同期処理を1件だけ実行する。既に実行中なら false を返して何もしない。
      * [block] は Dispatchers.IO 上で実行される。
      */
     private fun launchSync(busyMessage: String = "同期処理中です。完了までお待ちください", block: suspend () -> Unit): Boolean {
         if (isSyncing) {
-            post(busyMessage)
+            postFailure(busyMessage)
             return false
         }
         isSyncing = true
@@ -127,13 +173,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    /**
-     * ファイルブラウザに表示するエラー文言。
-     * APIのレスポンス本文がそのまま例外メッセージになることがあるため長さを制限する。
-     */
+    /** ファイルブラウザに表示するエラー文言 */
     private fun browserErrorText(e: Exception): String =
-        (e.message?.takeIf { it.isNotBlank() } ?: "一覧を取得できませんでした")
-            .take(BROWSER_ERROR_LIMIT)
+        "一覧を取得できませんでした。${describeCause(e)}"
 
     /** 更新履歴画面の再読込トリガ（連携・保存のたびに増える） */
     var changelogVersion by mutableStateOf(0)
@@ -276,14 +318,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var pkceVerifier: String? = null
         val pendingBoxAuthCode = MutableStateFlow<String?>(null)
         var boxPkceVerifier: String? = null
-
-        /** ファイルブラウザのエラー表示の最大文字数 */
-        private const val BROWSER_ERROR_LIMIT = 300
     }
 
     init {
         loadIdyerFontFamily()
+        // 画面の復元は ViewModel の生成直後に始まるので、編集画面が開く前に読み終えておく
+        stash.loadEditorDraft()?.let {
+            editorDraft = it.current
+            editorDraftBaseline = it.baseline
+        }
+        stash.loadExampleDraft()?.let {
+            exampleDraft = it.current
+            exampleDraftBaseline = it.baseline
+        }
         restoreLastDictionary()
+        viewModelScope.launch(Dispatchers.IO) {
+            for (request in localStashRequests) {
+                try {
+                    if (request == null) stash.clearDictionary()
+                    else stash.saveDictionary(request.uri, request.dictJson, request.pendingChangelog)
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        postFailure("編集内容を端末内に退避できませんでした。早めに保存してください。")
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             pendingDropboxAuthCode.collect { code ->
                 if (code != null) {
@@ -303,7 +363,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun consumeMessage() { message = null }
-    private fun post(msg: String) { message = msg }
+    private fun post(msg: String, isFailure: Boolean = false) { message = AppMessage(msg, isFailure) }
+    private fun postFailure(msg: String) = post(msg, isFailure = true)
+
+    fun dismissError() { errorNotice = null }
+
+    /** [note] には、失敗の後で編集内容がどうなっているか（端末内に残っている等）を書く。 */
+    private fun postError(title: String, e: Throwable, note: String? = null) {
+        errorNotice = ErrorNotice(title, listOfNotNull(describeCause(e), note).joinToString("\n\n"))
+    }
+
+    /**
+     * 例外を、利用者が次に何をすればよいか分かる文に言い換える。
+     * 例外メッセージには HTTP 応答の本文や内部の情報が混じるため、言い換えられない場合にだけ詳細として添える。
+     * 通信クライアントはタイムアウト等を独自の IOException に包んで投げるので、原因（cause）も調べる。
+     */
+    private fun describeCause(e: Throwable): String =
+        knownCause(e) ?: e.cause?.let(::knownCause)
+            ?: ("原因を特定できませんでした。" +
+                (e.message?.takeIf { it.isNotBlank() }?.let { "\n詳細: ${it.take(200)}" } ?: ""))
+
+    private fun knownCause(e: Throwable): String? = when (e) {
+        is java.net.UnknownHostException, is java.net.ConnectException ->
+            "インターネットに接続できません。通信状態を確認してください。"
+        is java.net.SocketTimeoutException ->
+            "通信がタイムアウトしました。電波状況を確認して、もう一度お試しください。"
+        is HttpStatusException -> when (e.code) {
+            401 -> "認証の期限が切れているか、取り消されています。設定で接続し直してください。"
+            403 -> "アクセスする権限がありません。設定で、接続に使っている権限を確認してください。"
+            404 -> "ファイルが見つかりません。移動・削除された可能性があります。"
+            409, 412, 422 -> "他の端末で先に更新されています。最新の辞書を読み込んでから、もう一度お試しください。"
+            429 -> "通信回数の上限に達しました。しばらく待ってから、もう一度お試しください。"
+            in 500..599 -> "通信先のサーバーで問題が起きています。しばらく待ってから、もう一度お試しください。"
+            else -> "通信先が要求を受け付けませんでした（HTTP ${e.code}）。"
+        }
+        is SecurityException, is java.io.FileNotFoundException ->
+            "ファイルにアクセスできません。移動・削除されたか、アクセス権限が切れています。ファイルを選び直してください。"
+        is org.json.JSONException ->
+            "データの形式が正しくないため読み込めませんでした。"
+        else -> null
+    }
+
+    /** 辞書を開いているか。store.isLoaded は Compose の状態ではないため、読み込みのたびに変わる fileName も併せて読み、画面を更新させる。 */
+    val isDictionaryLoaded: Boolean
+        get() = fileName != null && store.isLoaded
 
     /** 見出し語表示用フォント（Heksa有効時のみカスタムフォント） */
     val headwordFontFamily: FontFamily?
@@ -327,10 +430,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 loadDictionaryFromUri(uri)
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    post("前回の辞書を読み込めませんでした: ${e.message}")
+                    postError("前回の辞書を開けませんでした", e)
                 }
+                return@launch
+            }
+            restoreLocalStash(uriString)
+        }
+    }
+
+    /** 前回、保存しないまま終了されたときの編集内容があれば、読み込んだ辞書に重ねて戻す */
+    private suspend fun restoreLocalStash(uriString: String) {
+        try {
+            val stashed = stash.loadDictionary(uriString) ?: return
+            store.loadFromString(stashed.dictJson)
+            engine.rebuild()
+            changelog.pendingEntries.addAll(stashed.pendingChangelog)
+            withContext(Dispatchers.Main) {
+                hasUnsavedChanges = true
+                wordCount = store.wordCount()
+                post("保存されていなかった編集内容を復元しました")
+            }
+        } catch (e: Exception) {
+            // 読めない退避は次の起動でも読めないので、残さない
+            stash.clearDictionary()
+            withContext(Dispatchers.Main) {
+                postError("保存されていなかった編集内容を復元できませんでした", e)
             }
         }
+    }
+
+    /** ローカルモードで、アプリが終了されても未保存の編集を失わないよう端末内へ退避する */
+    private fun stashLocalChanges() {
+        val uri = currentUri ?: return
+        localStashRequests.trySend(
+            LocalStashRequest(uri.toString(), store.toJsonString(), changelog.pendingEntries.toList())
+        )
     }
 
     fun openDictionary(uri: Uri) {
@@ -346,12 +480,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 loadDictionaryFromUri(uri)
                 prefs.lastDictionaryUri = uri.toString()
                 withContext(Dispatchers.Main) {
+                    // 前の辞書の未保存の編集は、別の辞書を開いた時点で破棄されている
+                    localStashRequests.trySend(null)
                     searchText = ""
                     results = emptyList()
                     post("辞書を読み込みました")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("辞書を開けませんでした", e) }
             }
         }
     }
@@ -421,20 +557,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     changelogVersion++
                     if (relinkNeeded) promptRelinkChangelog = true
-                    post(
-                        if (flushed) "保存しました"
-                        else "保存しました（更新履歴CSVへの書き込みに失敗。連携先が移動・削除された可能性があります）"
-                    )
+                    // 更新履歴を書けなかった場合は、保留中の履歴がまだ端末内にしか無いので退避を残す
+                    if (flushed) localStashRequests.trySend(null) else stashLocalChanges()
+                    if (flushed) post("保存しました")
+                    else postFailure("辞書は保存しましたが、更新履歴CSVに書き込めませんでした。連携先が移動・削除された可能性があります。")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("保存エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("辞書を保存できませんでした", e, "編集内容はまだ保存されていません。アプリを閉じる前に、もう一度保存してください。") }
             }
         }
     }
 
     private fun autoSaveIfEnabled() {
         when (storageMode) {
-            StorageMode.LOCAL -> if (autoSave && currentUri != null) saveFile()
+            StorageMode.LOCAL -> {
+                // 自動保存でも書き込みに失敗しうるので、退避は常に行う
+                stashLocalChanges()
+                if (autoSave && currentUri != null) saveFile()
+            }
             StorageMode.DROPBOX -> if (autoSave && prefs.dropboxDictPath != null) saveToDropboxLocalCache()
             StorageMode.GITHUB -> if (autoSave && prefs.githubDictPath != null) saveToGitHubLocalCache()
             StorageMode.BOX -> if (autoSave && prefs.boxDictFileId != null) saveToBoxLocalCache()
@@ -462,8 +602,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         wordCount = 0
         results = emptyList()
         searchText = ""
-        editorDraft = null
-        exampleDraft = null
+        clearEditorDraft()
+        clearExampleDraft()
         changelog.setDictionary(null)
         // 切替先の辞書を自動復元
         restoreLastDictionary()
@@ -474,7 +614,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun launchDropboxAuth(context: Context) {
         val appKey = prefs.dropboxAppKey
         if (appKey.isEmpty()) {
-            post("App Key を入力してください")
+            postFailure("App Key を入力してください")
             return
         }
         val verifier = dropboxClient.generatePkceVerifier()
@@ -487,7 +627,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** MainActivity から OAuth2 コードを受け取ってトークン交換を行う */
     private fun handleDropboxAuthCode(code: String) {
         val verifier = pkceVerifier ?: run {
-            post("認証エラー: PKCE verifier が見つかりません")
+            postFailure("認証エラー: PKCE verifier が見つかりません")
             return
         }
         pkceVerifier = null
@@ -505,7 +645,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("Dropboxに接続しました${if (name.isNotEmpty()) "（$name）" else ""}")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("Dropbox接続エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postFailure("Dropboxに接続できませんでした。${describeCause(e)}") }
             }
         }
     }
@@ -549,7 +689,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openDropboxBrowser() {
         if (!dropboxConnected) {
-            post("先にDropboxに接続してください")
+            postFailure("先にDropboxに接続してください")
             return
         }
         dropboxBrowserTarget = "dict"
@@ -559,7 +699,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openDropboxBrowserForChangelog() {
         if (!dropboxConnected) {
-            post("先にDropboxに接続してください")
+            postFailure("先にDropboxに接続してください")
             return
         }
         // substringBeforeLast は区切り文字が無いと文字列全体を返すため、
@@ -654,7 +794,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openFromDropbox(path: String, name: String) {
-        if (isSyncing) { post("Dropboxと同期中です。完了までお待ちください"); return }
+        if (isSyncing) { postFailure("Dropboxと同期中です。完了までお待ちください"); return }
         dropboxBrowserTarget = null
         launchSync("Dropboxと同期中です。完了までお待ちください") {
             try {
@@ -698,11 +838,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post(
                         if (changelogFailed && hadLocalHistory)
                             "Dropboxから辞書を読み込みました（更新履歴 $changelogPath を取得できませんでした。表示中の履歴は古い可能性があります）"
-                        else "Dropboxから辞書を読み込みました"
+                        else "Dropboxから辞書を読み込みました",
+                        isFailure = changelogFailed && hadLocalHistory
                     )
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("Dropboxから辞書を読み込めませんでした", e) }
             }
         }
     }
@@ -725,7 +866,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     dropboxHasPendingUpload = true
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { postError("端末内に保存できませんでした", e, "編集内容はまだ保存されていません。") }
+            }
         }
     }
 
@@ -750,7 +893,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     if (hasPending) post("ローカルキャッシュを復元しました（Dropboxへの未同期があります）")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("キャッシュ復元エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("端末内の辞書を復元できませんでした", e) }
             }
         }
     }
@@ -762,7 +905,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 辞書 + 更新履歴を Dropbox へアップロードする */
     fun uploadToDropbox() {
         val dictPath = prefs.dropboxDictPath ?: run {
-            post("Dropboxの辞書ファイルが選択されていません")
+            postFailure("Dropboxの辞書ファイルが選択されていません")
             return
         }
         launchSync("Dropboxと同期中です。完了までお待ちください") {
@@ -795,7 +938,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("Dropboxに保存しました")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("Dropboxへの保存エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("Dropboxに保存できませんでした", e, "編集内容は端末内に残っています。") }
             }
         }
     }
@@ -803,7 +946,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Dropbox 上の最新ファイルを再読み込みする */
     fun reloadFromDropbox() {
         val dictPath = prefs.dropboxDictPath ?: run {
-            post("Dropboxの辞書ファイルが選択されていません")
+            postFailure("Dropboxの辞書ファイルが選択されていません")
             return
         }
         val dictName = prefs.dropboxDictName ?: return
@@ -818,7 +961,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun connectGitHub(token: String, owner: String, repo: String, branch: String) {
         val t = token.trim(); val o = owner.trim(); val r = repo.trim(); val b = branch.trim().ifEmpty { "main" }
         if (t.isEmpty() || o.isEmpty() || r.isEmpty()) {
-            post("トークン、オーナー、リポジトリを入力してください")
+            postFailure("トークン、オーナー、リポジトリを入力してください")
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -835,7 +978,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("GitHubに接続しました（$o/$r）")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("GitHub接続エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postFailure("GitHubに接続できませんでした。${describeCause(e)}") }
             }
         }
     }
@@ -862,14 +1005,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openGitHubBrowser() {
-        if (!githubConnected) { post("先にGitHubに接続してください"); return }
+        if (!githubConnected) { postFailure("先にGitHubに接続してください"); return }
         githubBrowserTarget = "dict"
         githubBrowserPath = ""
         loadGitHubFolder("")
     }
 
     fun openGitHubBrowserForChangelog() {
-        if (!githubConnected) { post("先にGitHubに接続してください"); return }
+        if (!githubConnected) { postFailure("先にGitHubに接続してください"); return }
         // substringBeforeLast は区切り文字が無いと文字列全体を返すため、
         // リポジトリ直下のCSV（例: dictionary_changelog.csv）ではルート("")を開始パスにする
         val startPath = prefs.githubChangelogPath
@@ -977,9 +1120,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openFromGitHub(path: String, name: String) {
-        if (isSyncing) { post("GitHubと同期中です。完了までお待ちください"); return }
+        if (isSyncing) { postFailure("GitHubと同期中です。完了までお待ちください"); return }
         githubBrowserTarget = null
-        val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
+        val token = prefs.githubToken ?: run { postFailure("GitHubに接続されていません"); return }
         val owner = prefs.githubOwner ?: return
         val repo = prefs.githubRepo ?: return
         launchSync("GitHubと同期中です。完了までお待ちください") {
@@ -1022,11 +1165,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post(
                         if (changelogFailed && hadLocalHistory)
                             "GitHubから辞書を読み込みました（更新履歴 $changelogPath を取得できませんでした。表示中の履歴は古い可能性があります）"
-                        else "GitHubから辞書を読み込みました"
+                        else "GitHubから辞書を読み込みました",
+                        isFailure = changelogFailed && hadLocalHistory
                     )
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("GitHubから辞書を読み込めませんでした", e) }
             }
         }
     }
@@ -1048,7 +1192,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     githubHasPendingUpload = true
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { postError("端末内に保存できませんでした", e, "編集内容はまだ保存されていません。") }
+            }
         }
     }
 
@@ -1072,7 +1218,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     if (hasPending) post("ローカルキャッシュを復元しました（GitHubへの未同期があります）")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("キャッシュ復元エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("端末内の辞書を復元できませんでした", e) }
             }
         }
     }
@@ -1083,8 +1229,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 辞書 + 更新履歴を GitHub へ1コミットとしてまとめてアップロードする */
     fun uploadToGitHub(commitMessage: String = "Update Dictionary (Android)") {
-        val dictPath = prefs.githubDictPath ?: run { post("GitHubの辞書ファイルが選択されていません"); return }
-        val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
+        val dictPath = prefs.githubDictPath ?: run { postFailure("GitHubの辞書ファイルが選択されていません"); return }
+        val token = prefs.githubToken ?: run { postFailure("GitHubに接続されていません"); return }
         val owner = prefs.githubOwner ?: return
         val repo = prefs.githubRepo ?: return
         val branch = prefs.githubBranch
@@ -1115,14 +1261,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("GitHubにコミットしました")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("GitHubへの保存エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("GitHubにコミットできませんでした", e, "編集内容は端末内に残っています。") }
             }
         }
     }
 
     /** GitHub 上の最新ファイルを再読み込みする */
     fun reloadFromGitHub() {
-        val dictPath = prefs.githubDictPath ?: run { post("GitHubの辞書ファイルが選択されていません"); return }
+        val dictPath = prefs.githubDictPath ?: run { postFailure("GitHubの辞書ファイルが選択されていません"); return }
         val dictName = prefs.githubDictName ?: return
         openFromGitHub(dictPath, dictName)
     }
@@ -1136,7 +1282,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun launchBoxAuth(context: Context) {
         val clientId = prefs.boxClientId
-        if (clientId.isEmpty()) { post("Client IDを入力してください"); return }
+        if (clientId.isEmpty()) { postFailure("Client IDを入力してください"); return }
         val verifier = boxClient.generatePkceVerifier()
         boxPkceVerifier = verifier
         val challenge = boxClient.generatePkceChallenge(verifier)
@@ -1145,7 +1291,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun handleBoxAuthCode(code: String) {
-        val verifier = boxPkceVerifier ?: run { post("認証エラー: PKCE verifierが見つかりません"); return }
+        val verifier = boxPkceVerifier ?: run { postFailure("認証エラー: PKCE verifierが見つかりません"); return }
         boxPkceVerifier = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1161,7 +1307,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("Boxに接続しました${if (name.isNotEmpty()) "（$name）" else ""}")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("Box接続エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postFailure("Boxに接続できませんでした。${describeCause(e)}") }
             }
         }
     }
@@ -1200,7 +1346,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openBoxBrowser() {
-        if (!boxConnected) { post("先にBoxに接続してください"); return }
+        if (!boxConnected) { postFailure("先にBoxに接続してください"); return }
         boxBrowserTarget = "dict"
         boxBrowserFolderStack = emptyList()
         boxBrowserFolderId = "0"
@@ -1209,7 +1355,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openBoxBrowserForChangelog() {
-        if (!boxConnected) { post("先にBoxに接続してください"); return }
+        if (!boxConnected) { postFailure("先にBoxに接続してください"); return }
         val startId = prefs.boxDictFolderId ?: "0"
         val startName = if (startId == "0") "Box" else "辞書フォルダ"
         boxBrowserTarget = "changelog"
@@ -1311,7 +1457,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun openFromBox(fileId: String, name: String) {
-        if (isSyncing) { post("Boxと同期中です。完了までお待ちください"); return }
+        if (isSyncing) { postFailure("Boxと同期中です。完了までお待ちください"); return }
         val folderId = boxBrowserFolderId
         boxBrowserTarget = null
         launchSync("Boxと同期中です。完了までお待ちください") {
@@ -1363,11 +1509,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post(
                         if (changelogFailed && hadLocalHistory)
                             "Boxから辞書を読み込みました（更新履歴 $csvName を取得できませんでした。表示中の履歴は古い可能性があります）"
-                        else "Boxから辞書を読み込みました"
+                        else "Boxから辞書を読み込みました",
+                        isFailure = changelogFailed && hadLocalHistory
                     )
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("読み込みエラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("Boxから辞書を読み込めませんでした", e) }
             }
         }
     }
@@ -1389,7 +1536,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     hasUnsavedChanges = false
                     boxHasPendingUpload = true
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { postError("端末内に保存できませんでした", e, "編集内容はまだ保存されていません。") }
+            }
         }
     }
 
@@ -1413,7 +1562,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     if (hasPending) post("ローカルキャッシュを復元しました（Boxへの未同期があります）")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("キャッシュ復元エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("端末内の辞書を復元できませんでした", e) }
             }
         }
     }
@@ -1423,7 +1572,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
 
     fun uploadToBox() {
-        val dictFileId = prefs.boxDictFileId ?: run { post("Boxの辞書ファイルが選択されていません"); return }
+        val dictFileId = prefs.boxDictFileId ?: run { postFailure("Boxの辞書ファイルが選択されていません"); return }
         val dictName = prefs.boxDictName ?: return
         val dictFolderId = prefs.boxDictFolderId ?: "0"
         launchSync("Boxと同期中です。完了までお待ちください") {
@@ -1459,13 +1608,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("Boxに保存しました")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("Boxへの保存エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postError("Boxに保存できませんでした", e, "編集内容は端末内に残っています。") }
             }
         }
     }
 
     fun reloadFromBox() {
-        val dictFileId = prefs.boxDictFileId ?: run { post("Boxの辞書ファイルが選択されていません"); return }
+        val dictFileId = prefs.boxDictFileId ?: run { postFailure("Boxの辞書ファイルが選択されていません"); return }
         val dictName = prefs.boxDictName ?: return
         val folderId = prefs.boxDictFolderId ?: "0"
         boxBrowserFolderId = folderId
@@ -1534,7 +1683,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startNewEntry(initialForm: String = "") {
         if (!store.isLoaded) {
-            post("先に辞書ファイルを開いてください。")
+            postFailure("先に辞書ファイルを開いてください。")
             return
         }
         editorDraft = EditorDraft(
@@ -1574,13 +1723,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun discardDraft() { editorDraft = null }
+    fun discardDraft() = clearEditorDraft()
+
+    private fun clearEditorDraft() {
+        editorDraft = null
+        editorDraftBaseline = null
+        stash.saveEditorDraft(null)
+    }
+
+    /** 編集画面が裏に回るたびに呼ぶ。アプリが終了されても、次の起動で入力中の内容を戻せるようにする。 */
+    fun stashEditorDraft(baseline: EditorDraft, current: EditorDraft) {
+        try {
+            stash.saveEditorDraft(StashedDraft(baseline, current))
+        } catch (_: Exception) {
+            // 退避は保険なので、書けなくても編集は続けられる
+        }
+    }
+
+    /**
+     * 退避していた入力中の内容を捨てる。利用者が自分でアプリを閉じた後の起動で呼ぶ。
+     * 閉じた時点で編集をやめたとみなし、OS に終了された場合（画面の状態ごと戻る場合）だけ戻す。
+     */
+    fun discardStashedDrafts() {
+        clearEditorDraft()
+        clearExampleDraft()
+    }
 
     /** ドラフトを辞書へ反映（対照関係の自動登録を含む） */
     fun commitDraft(draft: EditorDraft): Boolean {
+        // OS に終了された後は、辞書の読み込みより先に編集画面が戻ることがある
+        if (!store.isLoaded) {
+            postFailure("辞書を読み込んでいます。読み込みが終わってから保存してください。")
+            return false
+        }
         val form = draft.form.trim()
         if (form.isEmpty()) {
-            post("見出し語を入力してください。")
+            postFailure("見出し語を入力してください。")
             return false
         }
 
@@ -1639,7 +1817,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             changelog.addEntry("ADD", form)
         } else {
             val word = engine.lookup(id) ?: run {
-                post("対象の単語が見つかりません。")
+                postFailure("対象の単語が見つかりません。")
                 return false
             }
             val oldForm = DictionaryStore.formOf(word)
@@ -1661,7 +1839,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             newRelationList = newRelations
         )
 
-        editorDraft = null
+        clearEditorDraft()
         refreshAfterDataChange()
         return true
     }
@@ -1726,7 +1904,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startNewExample() {
         if (!store.isLoaded) {
-            post("先に辞書ファイルを開いてください。")
+            postFailure("先に辞書ファイルを開いてください。")
             return
         }
         exampleDraft = DraftExample(offerNumber = store.maxExampleId() + 1)
@@ -1770,12 +1948,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun discardExampleDraft() { exampleDraft = null }
+    fun discardExampleDraft() = clearExampleDraft()
+
+    private fun clearExampleDraft() {
+        exampleDraft = null
+        exampleDraftBaseline = null
+        stash.saveExampleDraft(null)
+    }
+
+    /** [stashEditorDraft] の例文版 */
+    fun stashExampleDraft(baseline: DraftExample, current: DraftExample) {
+        try {
+            stash.saveExampleDraft(StashedDraft(baseline, current))
+        } catch (_: Exception) {
+            // 退避は保険なので、書けなくても編集は続けられる
+        }
+    }
 
     fun commitExampleDraft(draft: DraftExample): Boolean {
+        if (!store.isLoaded) {
+            postFailure("辞書を読み込んでいます。読み込みが終わってから保存してください。")
+            return false
+        }
         val sentence = draft.sentence.trim()
         if (sentence.isEmpty()) {
-            post("「文」を入力してください。")
+            postFailure("「文」を入力してください。")
             return false
         }
         val isNew = draft.originalId == null
@@ -1805,17 +2002,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             store.updateExample(id, obj)
         }
 
-        exampleDraft = null
+        clearExampleDraft()
         examplesVersion++
         refreshAfterDataChange()
         return true
     }
 
     fun deleteExample(id: Int) {
+        val before = store.toJsonString()
+        val pendingBefore = changelog.pendingEntries.toList()
         store.removeExampleById(id)
         examplesVersion++
         refreshAfterDataChange()
-        post("例文を削除しました")
+        offerUndo("例文を削除しました", before, pendingBefore, deletedForm = null)
     }
 
     fun exampleList(): List<JSONObject> = store.exampleList()
@@ -1850,7 +2049,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 出典を1件照会して結果を zpdicOfferResult に設定する */
     fun fetchZpdicOffer(catalog: String, number: Int) {
         val apiKey = prefs.zpdicApiKey ?: run {
-            zpdicOfferStatus = "APIキーが設定されていません（環境設定で登録してください）"
+            zpdicOfferStatus = "APIキーが設定されていません（設定で登録してください）"
             return
         }
         if (catalog.trim().isEmpty() || catalog.trim() == Const.EXAMPLE_CATALOG_SELF) {
@@ -1890,10 +2089,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun errorMessage(error: String, number: Int?): String = when (error) {
         "bad_request" -> "HTTP 400: リクエストの内容が誤っています"
-        "auth_failed" -> "HTTP 401: APIキーが正しくありません。環境設定から再設定してください"
+        "auth_failed" -> "HTTP 401: APIキーが正しくありません。設定から設定し直してください"
         "not_found" -> if (number != null) "HTTP 404: No. $number の出典は存在しません" else "HTTP 404: 見つかりません"
         "rate_limit" -> "HTTP 429: 呼び出し回数の上限に達しています"
-        "api_key_non_ascii" -> "APIキーに使用できない文字が含まれています。環境設定から再設定してください"
+        "api_key_non_ascii" -> "APIキーに使用できない文字が含まれています。設定から設定し直してください"
         else -> "エラー: $error"
     }
 
@@ -1901,6 +2100,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteWord(id: Int) {
         val word = engine.lookup(id) ?: return
         val form = DictionaryStore.formOf(word)
+        val before = store.toJsonString()
+        val pendingBefore = changelog.pendingEntries.toList()
         store.removeWordById(id)
         for (w in store.wordList()) {
             val rels = w.optJSONArray("relations") ?: continue
@@ -1912,7 +2113,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         changelog.addEntry("DELETE", form)
         refreshAfterDataChange()
-        post("「$form」を削除しました")
+        offerUndo("「$form」を削除しました", before, pendingBefore, deletedForm = form)
+    }
+
+    /**
+     * 削除を知らせる通知に「元に戻す」を付ける。元に戻すと、削除前の辞書をそのまま戻す。
+     * 関連語の参照も一緒に外しているため、消した 1 件を足し直すより、丸ごと戻す方が確実。
+     */
+    private fun offerUndo(
+        text: String,
+        before: String,
+        pendingBefore: List<ChangelogEntry>,
+        deletedForm: String?
+    ) {
+        val after = store.toJsonString()
+        message = AppMessage(text, actionLabel = "元に戻す") { undoDelete(before, after, pendingBefore, deletedForm) }
+    }
+
+    private fun undoDelete(
+        before: String,
+        after: String,
+        pendingBefore: List<ChangelogEntry>,
+        deletedForm: String?
+    ) {
+        // 削除の後に別の編集や辞書の読み込みがあった場合、削除前に戻すとそれまで消えてしまう
+        if (store.toJsonString() != after) {
+            postFailure("削除の後に辞書が変更されたため、元に戻せませんでした。")
+            return
+        }
+        store.loadFromString(before)
+        val pending = changelog.pendingEntries
+        if (pending.size > pendingBefore.size && pending.take(pendingBefore.size) == pendingBefore) {
+            // 削除の記録がまだ更新履歴に書かれていなければ、記録ごと無かったことにする
+            pending.clear()
+            pending.addAll(pendingBefore)
+        } else if (deletedForm != null) {
+            // 自動保存等で削除の記録が書かれた後なので、復活したことを記録する
+            changelog.addEntry("ADD", deletedForm, "削除を元に戻した")
+        }
+        examplesVersion++
+        refreshAfterDataChange()
+        post("元に戻しました")
     }
 
     // ------------------------------------------------------------------
@@ -1964,7 +2205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("フォントを取り込みました")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("フォント取込エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postFailure("フォントを取り込めませんでした。${describeCause(e)}") }
             }
         }
     }
@@ -1975,12 +2216,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateDictionarySettings(punctuations: List<String>, ignoredPattern: String) {
         if (!store.isLoaded) {
-            post("先に辞書ファイルを開いてください。")
+            postFailure("先に辞書ファイルを開いてください。")
             return
         }
         if (ignoredPattern.isNotEmpty()) {
             try { Regex(ignoredPattern) } catch (e: Exception) {
-                post("無視パターンが正しい正規表現ではありません: ${e.message}")
+                postFailure("無視パターンが正しい正規表現ではありません: ${e.message}")
                 return
             }
         }
@@ -1999,16 +2240,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val text = changelog.exportCsvText()
                 val resolver = getApplication<Application>().contentResolver
                 SafIo.writeText(resolver, uri, text)
-                withContext(Dispatchers.Main) { post("更新履歴をエクスポートしました") }
+                withContext(Dispatchers.Main) { post("更新履歴を書き出しました") }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("エクスポートエラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postFailure("更新履歴を書き出せませんでした。${describeCause(e)}") }
             }
         }
     }
 
     fun linkChangelogCsv(uri: Uri) {
         if (!store.isLoaded) {
-            post("先に辞書ファイルを開いてください。")
+            postFailure("先に辞書ファイルを開いてください。")
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -2026,7 +2267,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     post("更新履歴CSVと連携しました。以後、辞書の保存と連動して自動更新されます。")
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { post("連携エラー: ${e.message}") }
+                withContext(Dispatchers.Main) { postFailure("更新履歴CSVと連携できませんでした。${describeCause(e)}") }
             }
         }
     }
@@ -2067,55 +2308,55 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun reloadChangelogFromCloud() {
         when (storageMode) {
-            StorageMode.LOCAL -> post("ローカルモードでは更新履歴の再取得はできません")
+            StorageMode.LOCAL -> postFailure("ローカルモードでは更新履歴をクラウドから読み込めません")
             StorageMode.DROPBOX -> {
                 val path = prefs.dropboxChangelogPath
-                    ?: run { post("更新履歴の保存先が設定されていません"); return }
+                    ?: run { postFailure("更新履歴の保存先が設定されていません"); return }
                 viewModelScope.launch(Dispatchers.IO) {
-                    val message = try {
+                    val (message, failed) = try {
                         changelog.loadFromText(dropboxClient.downloadFile(getValidAccessToken(), path))
-                        "更新履歴を再取得しました: $path"
+                        "更新履歴を読み込みました: $path" to false
                     } catch (e: Exception) {
-                        "更新履歴を取得できませんでした: ${e.message}"
+                        "更新履歴を読み込めませんでした。${describeCause(e)}" to true
                     }
                     withContext(Dispatchers.Main) {
                         changelogVersion++
-                        post(message)
+                        post(message, isFailure = failed)
                     }
                 }
             }
             StorageMode.GITHUB -> {
                 val path = prefs.githubChangelogPath
-                    ?: run { post("更新履歴の保存先が設定されていません"); return }
-                val token = prefs.githubToken ?: run { post("GitHubに接続されていません"); return }
+                    ?: run { postFailure("更新履歴の保存先が設定されていません"); return }
+                val token = prefs.githubToken ?: run { postFailure("GitHubに接続されていません"); return }
                 val owner = prefs.githubOwner ?: return
                 val repo = prefs.githubRepo ?: return
                 viewModelScope.launch(Dispatchers.IO) {
-                    val message = try {
+                    val (message, failed) = try {
                         changelog.loadFromText(githubClient.getFileContent(token, owner, repo, path).text)
-                        "更新履歴を再取得しました: $path"
+                        "更新履歴を読み込みました: $path" to false
                     } catch (e: Exception) {
-                        "更新履歴を取得できませんでした: ${e.message}"
+                        "更新履歴を読み込めませんでした。${describeCause(e)}" to true
                     }
                     withContext(Dispatchers.Main) {
                         changelogVersion++
-                        post(message)
+                        post(message, isFailure = failed)
                     }
                 }
             }
             StorageMode.BOX -> {
                 val fileId = prefs.boxChangelogFileId
-                    ?: run { post("更新履歴の保存先が設定されていません"); return }
+                    ?: run { postFailure("更新履歴の保存先が設定されていません"); return }
                 viewModelScope.launch(Dispatchers.IO) {
-                    val message = try {
+                    val (message, failed) = try {
                         changelog.loadFromText(boxClient.downloadFile(getValidBoxAccessToken(), fileId))
-                        "更新履歴を再取得しました"
+                        "更新履歴を読み込みました" to false
                     } catch (e: Exception) {
-                        "更新履歴を取得できませんでした: ${e.message}"
+                        "更新履歴を読み込めませんでした。${describeCause(e)}" to true
                     }
                     withContext(Dispatchers.Main) {
                         changelogVersion++
-                        post(message)
+                        post(message, isFailure = failed)
                     }
                 }
             }

@@ -141,7 +141,7 @@ class DropboxApiClient {
                 .build()
         ).execute()
         if (!resp.isSuccessful) {
-            throw IOException("ダウンロード失敗 (${resp.code}): ${resp.body?.string()}")
+            throw HttpStatusException(resp.code, "ダウンロード失敗 (${resp.code}): ${resp.body?.string()}")
         }
         return resp.body?.string() ?: throw IOException("空のレスポンス")
     }
@@ -163,7 +163,7 @@ class DropboxApiClient {
                 .build()
         ).execute()
         if (!resp.isSuccessful) {
-            throw IOException("アップロード失敗 (${resp.code}): ${resp.body?.string()}")
+            throw HttpStatusException(resp.code, "アップロード失敗 (${resp.code}): ${resp.body?.string()}")
         }
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -37,7 +38,7 @@ import com.zaslon.zasdict.domain.Const
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LegendScreen(vm: MainViewModel, navController: NavController) {
+fun LegendScreen(vm: MainViewModel, navController: NavController, snackbarHostState: SnackbarHostState) {
 
     val einkMode = LocalEinkMode.current
 
@@ -63,6 +64,7 @@ fun LegendScreen(vm: MainViewModel, navController: NavController) {
     }
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("凡例") },

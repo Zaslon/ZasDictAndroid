@@ -16,6 +16,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -41,11 +42,12 @@ import com.zaslon.zasdict.domain.Kaiomom
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ToolsScreen(vm: MainViewModel, navController: NavController, initialTab: Int) {
+fun ToolsScreen(vm: MainViewModel, navController: NavController, initialTab: Int, snackbarHostState: SnackbarHostState) {
     var selectedTab by remember { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
-    val tabs = listOf("変換", "IPA")
+    val tabs = listOf("変換", "IPA → 綴り")
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("ツール") },

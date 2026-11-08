@@ -45,7 +45,7 @@ class GitHubApiClient {
 
     fun getCurrentUser(token: String): String {
         val resp = http.newCall(requestBuilder(token, GitHubConfig.USER_URL).get().build()).execute()
-        if (!resp.isSuccessful) throw IOException("認証失敗 (${resp.code})")
+        if (!resp.isSuccessful) throw HttpStatusException(resp.code, "認証失敗 (${resp.code})")
         val json = JSONObject(resp.body?.string() ?: return "")
         return json.optString("name").takeIf { it.isNotEmpty() }
             ?: json.optString("login")
@@ -64,7 +64,7 @@ class GitHubApiClient {
             ?: throw IOException("レスポンスが空です (${resp.code})")
         if (!resp.isSuccessful) {
             val errMsg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-            throw IOException("ファイル取得失敗 (${resp.code}): $errMsg")
+            throw HttpStatusException(resp.code, "ファイル取得失敗 (${resp.code}): $errMsg")
         }
         val json = JSONObject(bodyStr)
         val sha = json.getString("sha")
@@ -81,7 +81,7 @@ class GitHubApiClient {
                     .get().build()
             ).execute()
             if (!dlResp.isSuccessful) {
-                throw IOException("ダウンロード失敗 (${dlResp.code})")
+                throw HttpStatusException(dlResp.code, "ダウンロード失敗 (${dlResp.code})")
             }
             val dlBody = dlResp.body?.string()?.takeIf { it.isNotBlank() }
                 ?: throw IOException("ダウンロードされたファイルが空です")
@@ -133,7 +133,7 @@ class GitHubApiClient {
         if (!resp.isSuccessful) {
             val bodyStr = resp.body?.string() ?: ""
             val errMsg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
-            throw IOException("アップロード失敗 (${resp.code}): $errMsg")
+            throw HttpStatusException(resp.code, "アップロード失敗 (${resp.code}): $errMsg")
         }
     }
 
@@ -157,7 +157,7 @@ class GitHubApiClient {
         val refBody = refResp.body?.string()?.takeIf { it.isNotBlank() }
             ?: throw IOException("ブランチ参照の取得に失敗しました (${refResp.code})")
         if (!refResp.isSuccessful) {
-            throw IOException("ブランチ参照取得失敗 (${refResp.code}): ${runCatching { JSONObject(refBody).optString("message") }.getOrDefault(refBody)}")
+            throw HttpStatusException(refResp.code, "ブランチ参照取得失敗 (${refResp.code}): ${runCatching { JSONObject(refBody).optString("message") }.getOrDefault(refBody)}")
         }
         val currentCommitSha = JSONObject(refBody).getJSONObject("object").getString("sha")
 
@@ -167,7 +167,7 @@ class GitHubApiClient {
         val commitBody = commitResp.body?.string()?.takeIf { it.isNotBlank() }
             ?: throw IOException("コミット情報の取得に失敗しました")
         if (!commitResp.isSuccessful) {
-            throw IOException("コミット情報取得失敗 (${commitResp.code})")
+            throw HttpStatusException(commitResp.code, "コミット情報取得失敗 (${commitResp.code})")
         }
         val baseTreeSha = JSONObject(commitBody).getJSONObject("tree").getString("sha")
 
@@ -191,7 +191,7 @@ class GitHubApiClient {
         val treeRespBody = treeResp.body?.string()?.takeIf { it.isNotBlank() }
             ?: throw IOException("ツリーの作成に失敗しました")
         if (!treeResp.isSuccessful) {
-            throw IOException("ツリー作成失敗 (${treeResp.code}): ${runCatching { JSONObject(treeRespBody).optString("message") }.getOrDefault(treeRespBody)}")
+            throw HttpStatusException(treeResp.code, "ツリー作成失敗 (${treeResp.code}): ${runCatching { JSONObject(treeRespBody).optString("message") }.getOrDefault(treeRespBody)}")
         }
         val newTreeSha = JSONObject(treeRespBody).getString("sha")
 
@@ -207,7 +207,7 @@ class GitHubApiClient {
         val newCommitRespBody = newCommitResp.body?.string()?.takeIf { it.isNotBlank() }
             ?: throw IOException("コミットの作成に失敗しました")
         if (!newCommitResp.isSuccessful) {
-            throw IOException("コミット作成失敗 (${newCommitResp.code}): ${runCatching { JSONObject(newCommitRespBody).optString("message") }.getOrDefault(newCommitRespBody)}")
+            throw HttpStatusException(newCommitResp.code, "コミット作成失敗 (${newCommitResp.code}): ${runCatching { JSONObject(newCommitRespBody).optString("message") }.getOrDefault(newCommitRespBody)}")
         }
         val newCommitSha = JSONObject(newCommitRespBody).getString("sha")
 
@@ -220,7 +220,7 @@ class GitHubApiClient {
         ).execute()
         if (!updateRefResp.isSuccessful) {
             val updateRefRespBody = updateRefResp.body?.string() ?: ""
-            throw IOException("ブランチ更新失敗 (${updateRefResp.code}): ${runCatching { JSONObject(updateRefRespBody).optString("message") }.getOrDefault(updateRefRespBody)}")
+            throw HttpStatusException(updateRefResp.code, "ブランチ更新失敗 (${updateRefResp.code}): ${runCatching { JSONObject(updateRefRespBody).optString("message") }.getOrDefault(updateRefRespBody)}")
         }
     }
 
@@ -236,7 +236,7 @@ class GitHubApiClient {
         if (!resp.isSuccessful) {
             val errMsg = runCatching { JSONObject(bodyStr).optString("message") }.getOrDefault(bodyStr)
                 .take(ERROR_MESSAGE_LIMIT)
-            throw IOException("フォルダ一覧取得失敗 (${resp.code}): $errMsg")
+            throw HttpStatusException(resp.code, "フォルダ一覧取得失敗 (${resp.code}): $errMsg")
         }
         // ファイルのパスを渡すと配列ではなく単一オブジェクト（base64のcontent入り）が返る。
         // そのまま JSONArray に渡すとレスポンス全文が例外メッセージになり画面へ出てしまう。

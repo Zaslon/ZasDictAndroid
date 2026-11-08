@@ -7,15 +7,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -36,7 +33,7 @@ import com.zaslon.zasdict.ui.theme.LocalEinkMode
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController) {
+fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController, snackbarHostState: SnackbarHostState) {
 
     val einkMode = LocalEinkMode.current
 
@@ -46,21 +43,21 @@ fun DictionarySettingsScreen(vm: MainViewModel, navController: NavController) {
 
     val einkScrollConnection = rememberEinkNestedScrollConnection(scrollState)
 
-    var punctuations by remember {
-        mutableStateOf(vm.store.getPunctuations().joinToString(""))
-    }
-    var ignoredPattern by remember {
-        mutableStateOf(vm.store.getIgnoredPattern())
-    }
+    val initialPunctuations = remember { vm.store.getPunctuations().joinToString("") }
+    val initialIgnoredPattern = remember { vm.store.getIgnoredPattern() }
+    var punctuations by remember { mutableStateOf(initialPunctuations) }
+    var ignoredPattern by remember { mutableStateOf(initialIgnoredPattern) }
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("辞書依存設定") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
+                    EditorCloseButton(
+                        hasChanges = punctuations != initialPunctuations || ignoredPattern != initialIgnoredPattern,
+                        subject = "辞書依存設定"
+                    ) { navController.popBackStack() }
                 }
             )
         }
