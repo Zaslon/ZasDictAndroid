@@ -190,7 +190,7 @@ fun ZasDictApp(vm: MainViewModel = viewModel()) {
             // 失敗であることを、文言に加えてアイコンでも示す
             icon = {
                 Icon(
-                    painterResource(R.drawable.error),
+                    painterResource(R.drawable.error_fill),
                     contentDescription = "エラー",
                     tint = ZasTheme.colors.notificationError
                 )

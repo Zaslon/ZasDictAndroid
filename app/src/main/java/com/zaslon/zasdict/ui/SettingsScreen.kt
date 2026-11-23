@@ -1,5 +1,7 @@
 package com.zaslon.zasdict.ui
 
+import androidx.compose.ui.res.painterResource
+import com.zaslon.zasdict.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +17,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,8 +32,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.Composable
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -488,8 +487,8 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
                             trailingIcon = {
                                 IconButton(onClick = { zpdicKeyVisible = !zpdicKeyVisible }) {
                                     Icon(
-                                        if (zpdicKeyVisible) Icons.Default.VisibilityOff
-                                        else Icons.Default.Visibility,
+                                        if (zpdicKeyVisible) painterResource(R.drawable.visibility_off)
+                                        else painterResource(R.drawable.visibility),
                                         contentDescription = if (zpdicKeyVisible) "APIキーを隠す" else "APIキーを表示"
                                     )
                                 }

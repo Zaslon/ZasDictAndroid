@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Material Symbols「subdirectory_arrow_right」（Google、Apache License 2.0）を元に、左へ 90 度回転し、塗りを currentColor に変更した。 -->
+<!-- Material Symbols Rounded「subdirectory_arrow_right」FILL 0、wght 400、GRAD 0、opsz 24（Google、Apache License 2.0）を元に、左へ 90 度回転し、塗りを currentColor に変更した。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -8,6 +8,6 @@
   <group android:translateX="0" android:translateY="960">
     <path
         android:fillColor="#FF000000"
-        android:pathData="M820 -560L777.23 -517.23L630 -665.08L630 -220L180 -220L180 -280L570 -280L570 -665.08L422.15 -517.23L379.39 -559.38L600 -780L820 -560Z"/>
+        android:pathData="M783 -520Q767 -520 755 -532L640 -647L640 -280Q640 -247 616.5 -223.5Q593 -200 560 -200L200 -200Q183 -200 171.5 -211.5Q160 -223 160 -240Q160 -257 171.5 -268.5Q183 -280 200 -280L560 -280L560 -647L444 -531Q432 -519 416 -519.5Q400 -520 388 -531Q376 -543 375.5 -559Q375 -575 387 -587L572 -772Q578 -778 585 -780.5Q592 -783 600 -783Q608 -783 615 -780.5Q622 -778 628 -772L811 -589Q823 -577 823 -560.5Q823 -544 811 -532Q799 -520 783 -520Z"/>
   </group>
 </vector>

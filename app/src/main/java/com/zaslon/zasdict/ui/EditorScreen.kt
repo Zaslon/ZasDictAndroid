@@ -1,5 +1,7 @@
 package com.zaslon.zasdict.ui
 
+import androidx.compose.ui.res.painterResource
+import com.zaslon.zasdict.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,10 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -147,7 +145,7 @@ fun EditorScreen(
                         } else if (vm.commitDraft(buildDraft())) {
                             navController.popBackStack()
                         }
-                    }) { Icon(Icons.Default.Check, contentDescription = "登録") }
+                    }) { Icon(painterResource(R.drawable.check), contentDescription = "登録") }
                 }
             )
         }
@@ -207,12 +205,12 @@ fun EditorScreen(
                         singleLine = true
                     )
                     IconButton(onClick = { translations.removeAt(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "訳語を削除")
+                        Icon(painterResource(R.drawable.delete), contentDescription = "訳語を削除")
                     }
                 }
             }
             ZasOutlinedButton(onClick = { translations.add(DraftTranslation()) }) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                Icon(painterResource(R.drawable.add), contentDescription = null)
                 Text("訳語を追加")
             }
 
@@ -235,7 +233,7 @@ fun EditorScreen(
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { contents.removeAt(index) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "${c.title.ifEmpty { "内容" }}を削除")
+                            Icon(painterResource(R.drawable.delete), contentDescription = "${c.title.ifEmpty { "内容" }}を削除")
                         }
                     }
                     OutlinedTextField(
@@ -261,7 +259,7 @@ fun EditorScreen(
                             contents.addAll(sorted)
                         }
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
+                        Icon(painterResource(R.drawable.add), contentDescription = null)
                         Text("${title}を追加")
                     }
                 }
@@ -301,12 +299,12 @@ fun EditorScreen(
                     )
                     ZasTextButton(onClick = { showRelationPicker = index }) { Text("選択") }
                     IconButton(onClick = { relations.removeAt(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "関連語を削除")
+                        Icon(painterResource(R.drawable.delete), contentDescription = "関連語を削除")
                     }
                 }
             }
             ZasOutlinedButton(onClick = { relations.add(DraftRelation()) }) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                Icon(painterResource(R.drawable.add), contentDescription = null)
                 Text("関連語を追加")
             }
 
@@ -336,12 +334,12 @@ fun EditorScreen(
                         textStyle = TextStyle(fontFamily = vm.headwordFontFamily)
                     )
                     IconButton(onClick = { variations.removeAt(index) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "変化形を削除")
+                        Icon(painterResource(R.drawable.delete), contentDescription = "変化形を削除")
                     }
                 }
             }
             ZasOutlinedButton(onClick = { variations.add(DraftVariation()) }) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                Icon(painterResource(R.drawable.add), contentDescription = null)
                 Text("変化形を追加")
             }
 

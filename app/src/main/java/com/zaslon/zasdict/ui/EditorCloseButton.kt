@@ -41,7 +41,7 @@ fun EditorCloseButton(
         if (hasChanges) {
             Icon(painterResource(R.drawable.close), contentDescription = "キャンセル")
         } else {
-            Icon(painterResource(R.drawable.arrow_left_line), contentDescription = "戻る")
+            Icon(painterResource(R.drawable.arrow_back), contentDescription = "戻る")
         }
     }
 

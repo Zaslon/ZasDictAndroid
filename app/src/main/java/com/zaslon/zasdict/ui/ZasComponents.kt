@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -33,12 +32,12 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.zaslon.zasdict.R
+import com.zaslon.zasdict.ui.theme.ZasShape
 import com.zaslon.zasdict.ui.theme.ZasTheme
 
 // Material の既定のボタンは長丸（高さの半分を丸める形）で、デザインシステムが使わない形のため、
 // ボタンはここの部品を使う。高さはタッチ操作の標準（size-control-md）を最小とし、文字が大きくなれば伸ばす。
 
-private val ControlShape = RoundedCornerShape(8.dp)
 private val ControlMinHeight = 48.dp
 
 /** 塗りのボタン（主ボタン） */
@@ -53,7 +52,7 @@ fun ZasButton(
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = ControlMinHeight),
         enabled = enabled,
-        shape = ControlShape,
+        shape = ZasShape.control,
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -76,7 +75,7 @@ fun ZasOutlinedButton(
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = ControlMinHeight),
         enabled = enabled,
-        shape = ControlShape,
+        shape = ZasShape.control,
         colors = ButtonDefaults.outlinedButtonColors(
             containerColor = Color.Transparent,
             contentColor = ZasTheme.colors.buttonText,
@@ -102,7 +101,7 @@ fun ZasTextButton(
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = ControlMinHeight),
         enabled = enabled,
-        shape = ControlShape,
+        shape = ZasShape.control,
         colors = ButtonDefaults.textButtonColors(
             contentColor = ZasTheme.colors.buttonText,
             disabledContentColor = ZasTheme.colors.disabledText
@@ -121,7 +120,7 @@ fun ZasDestructiveButton(
     Button(
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = ControlMinHeight),
-        shape = ControlShape,
+        shape = ZasShape.control,
         colors = ButtonDefaults.buttonColors(
             containerColor = ZasTheme.colors.destructive,
             contentColor = ZasTheme.colors.onDestructive
@@ -164,7 +163,7 @@ fun zasTextFieldColors(): TextFieldColors {
     )
 }
 
-/** 確認ポップアップの見出し。支援技術に確認文の見出しとして伝える。 */
+/** 確認ダイアログの見出し。支援技術に確認文の見出しとして伝える。 */
 @Composable
 fun DialogTitle(text: String) {
     Text(text, modifier = Modifier.semantics { heading() })
@@ -174,7 +173,7 @@ fun DialogTitle(text: String) {
 @Composable
 fun BackButton(onClick: () -> Unit) {
     IconButton(onClick = onClick) {
-        Icon(painterResource(R.drawable.arrow_left_line), contentDescription = "戻る")
+        Icon(painterResource(R.drawable.arrow_back), contentDescription = "戻る")
     }
 }
 
@@ -213,7 +212,7 @@ fun ZasTag(text: String) {
         text = text,
         style = MaterialTheme.typography.labelMedium,
         modifier = Modifier
-            .border(1.dp, ZasTheme.colors.border, RoundedCornerShape(6.dp))
+            .border(1.dp, ZasTheme.colors.border, ZasShape.chip)
             .padding(horizontal = 8.dp, vertical = 4.dp)
     )
 }
@@ -229,6 +228,7 @@ fun ZasCard(
     OutlinedCard(
         modifier = modifier,
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = ZasShape.card,
         border = BorderStroke(1.dp, ZasTheme.colors.border),
         elevation = CardDefaults.outlinedCardElevation(defaultElevation = 0.dp),
         content = content
