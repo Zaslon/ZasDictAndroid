@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -24,12 +25,14 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -61,6 +64,7 @@ import com.zaslon.zasdict.data.DictionaryStore
 import com.zaslon.zasdict.data.StorageMode
 import com.zaslon.zasdict.domain.Const
 import com.zaslon.zasdict.ui.theme.LocalEinkMode
+import com.zaslon.zasdict.ui.theme.ZasShape
 import com.zaslon.zasdict.ui.theme.ZasTheme
 import com.zaslon.zasdict.ui.theme.einkFocusFrame
 
@@ -359,36 +363,22 @@ fun SearchScreen(
                     }
                 )
 
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Const.SEARCH_MODES.forEach { mode ->
-                        FilterChip(
-                            selected = vm.searchMode == mode,
-                            onClick = { vm.onSearchModeChanged(mode) },
-                            label = { Text(mode) },
-                            leadingIcon = { SelectedMark(vm.searchMode == mode) }
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Const.SEARCH_SCOPES.forEach { scope ->
-                        FilterChip(
-                            selected = vm.searchScope == scope,
-                            onClick = { vm.onSearchScopeChanged(scope) },
-                            label = { Text(scope) },
-                            leadingIcon = { SelectedMark(vm.searchScope == scope) }
-                        )
-                    }
+                    SegmentedChoice(
+                        options = Const.SEARCH_MODES,
+                        selected = vm.searchMode,
+                        onSelect = { vm.onSearchModeChanged(it) }
+                    )
+                    SegmentedChoice(
+                        options = Const.SEARCH_SCOPES,
+                        selected = vm.searchScope,
+                        onSelect = { vm.onSearchScopeChanged(it) }
+                    )
                 }
 
                 val displayItems = remember(vm.results) {
@@ -501,11 +491,37 @@ fun SearchScreen(
     }
 }
 
-/** 選択中のチップを、色だけでなく印でも示す */
+/**
+ * 択一の選択肢を、境目を接したひと続きのボタンとして並べる。
+ * 選択中は淡い塗りで示す。SegmentedButton は既定で選択中にチェックの印を出すため、icon を空にして消している。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SelectedMark(selected: Boolean) {
-    if (selected) {
-        Icon(painterResource(R.drawable.check), contentDescription = null, modifier = Modifier.size(18.dp))
+private fun SegmentedChoice(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        options.forEachIndexed { i, option ->
+            SegmentedButton(
+                selected = option == selected,
+                onClick = { onSelect(option) },
+                shape = SegmentedButtonDefaults.itemShape(i, options.size, baseShape = ZasShape.control),
+                icon = {},
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    activeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    activeBorderColor = MaterialTheme.colorScheme.outline,
+                    inactiveContainerColor = Color.Transparent,
+                    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    inactiveBorderColor = MaterialTheme.colorScheme.outline,
+                ),
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) {
+                Text(option, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }
 
