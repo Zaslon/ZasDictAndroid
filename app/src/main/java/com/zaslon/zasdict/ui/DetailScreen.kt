@@ -12,10 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,23 +82,23 @@ fun DetailScreen(
                         IconButton(onClick = {
                             navController.popBackStack(Routes.SEARCH, inclusive = false)
                         }) {
-                            Icon(painterResource(R.drawable.house_line), contentDescription = "ホーム")
+                            Icon(painterResource(R.drawable.home), contentDescription = "ホーム")
                         }
                     }
                     IconButton(onClick = {
                         vm.startEditEntry(wordId)
                         if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
-                    }) { Icon(Icons.Default.Edit, contentDescription = "単語を編集") }
+                    }) { Icon(painterResource(R.drawable.edit), contentDescription = "単語を編集") }
                     IconButton(onClick = {
                         vm.startDuplicateEntry(wordId)
                         if (vm.editorDraft != null) navController.navigate(Routes.EDITOR)
-                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "単語を複製") }
+                    }) { Icon(painterResource(R.drawable.content_copy), contentDescription = "単語を複製") }
                     IconButton(onClick = {
                         vm.deleteWord(wordId)
                         if (isPane) onSelectWord?.invoke(null)
                         else navController.popBackStack()
                     }) {
-                        Icon(Icons.Default.Delete, contentDescription = "単語を削除")
+                        Icon(painterResource(R.drawable.delete), contentDescription = "単語を削除")
                     }
                 }
             )

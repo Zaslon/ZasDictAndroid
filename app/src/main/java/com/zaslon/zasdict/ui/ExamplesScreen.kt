@@ -16,10 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
@@ -98,79 +93,80 @@ fun ExamplesScreen(
     VolumeScrollEffect(listState)
     val einkScrollConnection = rememberEinkNestedScrollConnection(listState)
 
-    Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("例文") },
-                navigationIcon = {
-                    BackButton(onClick = { navController.popBackStack() })
-                }
-            )
-        },
-        floatingActionButton = {
-            ZasFab(
-                onClick = {
-                    vm.startNewExample()
-                    if (vm.exampleDraft != null) navController.navigate(Routes.EXAMPLE_EDITOR)
-                },
-                icon = rememberVectorPainter(Icons.Default.Add),
-                contentDescription = "例文を追加"
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            OutlinedTextField(
-                colors = zasTextFieldColors(),
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("例文・訳を検索") },
-                leadingIcon = { Icon(painterResource(R.drawable.search), contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(painterResource(R.drawable.close), contentDescription = "検索語を消去")
-                        }
+    FabSnackbarBox(snackbarHostState) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("例文") },
+                    navigationIcon = {
+                        BackButton(onClick = { navController.popBackStack() })
                     }
-                },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-
-            if (filtered.isEmpty()) {
-                Text(
-                    text = if (allExamples.isEmpty()) "例文がありません。「例文を追加」ボタンで追加してください。"
-                           else "一致する例文がありません。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
                 )
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .let { if (einkMode) it.nestedScroll(einkScrollConnection) else it }
-                ) {
-                    items(filtered, key = { it.optInt("id", -1) }) { ex ->
-                        ExampleListItem(
-                            example = ex,
-                            headwordFont = vm.headwordFontFamily,
-                            onClick = {
-                                val id = ex.optInt("id", -1)
-                                if (id >= 0) {
-                                    vm.startEditExample(id)
-                                    navController.navigate(Routes.EXAMPLE_EDITOR)
-                                }
+            },
+            floatingActionButton = {
+                ZasFab(
+                    onClick = {
+                        vm.startNewExample()
+                        if (vm.exampleDraft != null) navController.navigate(Routes.EXAMPLE_EDITOR)
+                    },
+                    icon = painterResource(R.drawable.add),
+                    contentDescription = "例文を追加"
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                OutlinedTextField(
+                    colors = zasTextFieldColors(),
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("例文・訳を検索") },
+                    leadingIcon = { Icon(painterResource(R.drawable.search), contentDescription = null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(painterResource(R.drawable.close), contentDescription = "検索語を消去")
                             }
-                        )
-                        Divider()
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
+                if (filtered.isEmpty()) {
+                    Text(
+                        text = if (allExamples.isEmpty()) "例文がありません。「例文を追加」ボタンで追加してください。"
+                               else "一致する例文がありません。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .let { if (einkMode) it.nestedScroll(einkScrollConnection) else it }
+                    ) {
+                        items(filtered, key = { it.optInt("id", -1) }) { ex ->
+                            ExampleListItem(
+                                example = ex,
+                                headwordFont = vm.headwordFontFamily,
+                                onClick = {
+                                    val id = ex.optInt("id", -1)
+                                    if (id >= 0) {
+                                        vm.startEditExample(id)
+                                        navController.navigate(Routes.EXAMPLE_EDITOR)
+                                    }
+                                }
+                            )
+                            Divider()
+                        }
                     }
                 }
             }
@@ -309,7 +305,7 @@ fun ExampleEditorScreen(
                             vm.discardExampleDraft()
                             navController.popBackStack()
                         }) {
-                            Icon(Icons.Default.Delete, contentDescription = "例文を削除")
+                            Icon(painterResource(R.drawable.delete), contentDescription = "例文を削除")
                         }
                     }
                     IconButton(onClick = {
@@ -319,7 +315,7 @@ fun ExampleEditorScreen(
                             navController.popBackStack()
                         }
                     }) {
-                        Icon(Icons.Default.Check, contentDescription = "登録")
+                        Icon(painterResource(R.drawable.check), contentDescription = "登録")
                     }
                 }
             )
@@ -407,7 +403,7 @@ fun ExampleEditorScreen(
                 }
             }
             ZasOutlinedButton(onClick = { showWordPicker = true }) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                Icon(painterResource(R.drawable.add), contentDescription = null)
                 Text("単語を追加")
             }
 

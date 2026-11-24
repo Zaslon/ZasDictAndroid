@@ -10,13 +10,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -65,24 +65,21 @@ fun Modifier.einkFocusFrame(
 private fun DrawScope.drawFrame(bounds: Rect) {
     val inner = 2.dp.toPx()
     val outer = 3.dp.toPx()
-    val radius = CornerRadius(4.dp.toPx())
-    ring(bounds, offset = inner / 2, width = inner, color = Color.White, radius = radius)
-    ring(bounds, offset = inner + outer / 2, width = outer, color = Color.Black, radius = radius)
+    ring(bounds, offset = inner / 2, width = inner, color = Color.White)
+    ring(bounds, offset = inner + outer / 2, width = outer, color = Color.Black)
 }
 
 /** 要素から offset だけ外側に線を引く。画面の端の要素では外に出る分を内側へ寄せ、線が切れないようにする。 */
-private fun DrawScope.ring(bounds: Rect, offset: Float, width: Float, color: Color, radius: CornerRadius) {
+private fun DrawScope.ring(bounds: Rect, offset: Float, width: Float, color: Color) {
     val half = width / 2
     val left = (bounds.left - offset).coerceAtLeast(half)
     val top = (bounds.top - offset).coerceAtLeast(half)
     val right = (bounds.right + offset).coerceAtMost(size.width - half)
     val bottom = (bounds.bottom + offset).coerceAtMost(size.height - half)
     if (right <= left || bottom <= top) return
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(left, top),
-        size = Size(right - left, bottom - top),
-        cornerRadius = radius,
-        style = Stroke(width)
-    )
+    val outline = FrameShape.createOutline(Size(right - left, bottom - top), layoutDirection, this)
+    translate(left, top) { drawOutline(outline, color, style = Stroke(width)) }
 }
+
+// デザインシステムはフォーカス表示の角も超楕円で描くと定めている
+private val FrameShape = SquircleShape(4.dp)

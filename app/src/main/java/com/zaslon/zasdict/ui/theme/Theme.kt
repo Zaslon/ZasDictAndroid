@@ -4,7 +4,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalRippleConfiguration
@@ -26,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-// 値は ZasDesignSystem の local-design-system/tokens.md から写す。tokens.md は生成物なので、
+// 値は ZasDesignSystem の design-system/tokens.md から写す。tokens.md は生成物なので、
 // 値を変えるときは ZasDesignSystem 側を直して書き出し直し、ここへ写し直す。
 
 /** E-inkモード（デザインシステムの高コントラストモード）が有効かどうかを各画面へ伝える */
@@ -80,12 +79,12 @@ private object Palette {
     val gray600 = Color(0xFF666666)
     val gray700 = Color(0xFF4D4D4D)
     val gray900 = Color(0xFF1A1A1A)
-    val key100 = Color(0xFFE0E1FF)
-    val key300 = Color(0xFFB3B0FF)
-    val key600 = Color(0xFF6A56D7)
-    val key700 = Color(0xFF573DBE)
-    val key900 = Color(0xFF4321A3)
-    val key1000 = Color(0xFF380C91)
+    val key100 = Color(0xFFD8E3FF)
+    val key300 = Color(0xFF9AB6FF)
+    val key600 = Color(0xFF4061DB)
+    val key700 = Color(0xFF2E49C1)
+    val key900 = Color(0xFF1C2EA6)
+    val key1000 = Color(0xFF141D94)
     val red100 = Color(0xFFFFDADA)
     val red300 = Color(0xFFFF9696)
     val red800 = Color(0xFFEC0000)
@@ -99,6 +98,10 @@ private object Palette {
     val yellow300 = Color(0xFFFFD43D)
     val yellow1000 = Color(0xFF806300)
     val yellow1200 = Color(0xFF604B00)
+    val cyan100 = Color(0xFFC8F8FF)
+    val cyan300 = Color(0xFF79E2F2)
+    val cyan900 = Color(0xFF006F83)
+    val cyan1100 = Color(0xFF004C59)
     val bgLight0 = white
     val bgLight1 = gray50
     val bgDark0 = Color(0xFF181818)
@@ -170,9 +173,9 @@ private val LightZasColors = with(Palette) {
         selectedBackground = key100, onSelectedBackground = black,
         inverseBackground = gray900, inverseText = white, inverseAction = key300,
         statusbarText = black,
-        statusbarHighlight = key100, statusbarSuccess = green100,
+        statusbarHighlight = cyan100, statusbarSuccess = green100,
         statusbarWarning = yellow100, statusbarError = red100,
-        notificationInfo = gray600, notificationSuccess = green900,
+        notificationInfo = cyan900, notificationSuccess = green900,
         notificationWarning = yellow1000, notificationError = red900,
     )
 }
@@ -187,9 +190,9 @@ private val DarkZasColors = with(Palette) {
         selectedBackground = key1000, onSelectedBackground = white,
         inverseBackground = gray50, inverseText = black, inverseAction = key700,
         statusbarText = white,
-        statusbarHighlight = key1000, statusbarSuccess = green1100,
+        statusbarHighlight = cyan1100, statusbarSuccess = green1100,
         statusbarWarning = yellow1200, statusbarError = red1100,
-        notificationInfo = gray300, notificationSuccess = green300,
+        notificationInfo = cyan300, notificationSuccess = green300,
         notificationWarning = yellow300, notificationError = red300,
     )
 }
@@ -279,12 +282,19 @@ private val ZasTypography = Typography(
     labelSmall = small,
 )
 
-private val ZasShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp), // radius-control（入力欄、メニュー、スナックバー）
-    small = RoundedCornerShape(6.dp),      // radius-chip
-    medium = RoundedCornerShape(12.dp),    // radius-card
-    large = RoundedCornerShape(12.dp),
-    extraLarge = RoundedCornerShape(12.dp) // ダイアログ
+/** 角の丸みのトークン。Material の部品には既定の形をテーマの Shapes から取らないものがあるため、shape 引数でも渡す。 */
+object ZasShape {
+    val card = SquircleShape(12.dp)
+    val control = SquircleShape(8.dp)
+    val chip = SquircleShape(6.dp)
+}
+
+private val MaterialShapes = Shapes(
+    extraSmall = ZasShape.control, // 入力欄、メニュー、スナックバー
+    small = ZasShape.chip,
+    medium = ZasShape.card,
+    large = ZasShape.card,
+    extraLarge = ZasShape.card     // ダイアログ
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -314,7 +324,7 @@ fun ZasDictTheme(
             MaterialTheme(
                 colorScheme = colorScheme,
                 typography = ZasTypography,
-                shapes = ZasShapes,
+                shapes = MaterialShapes,
                 content = content
             )
         }

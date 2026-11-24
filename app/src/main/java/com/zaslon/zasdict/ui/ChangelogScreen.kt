@@ -1,5 +1,7 @@
 package com.zaslon.zasdict.ui
 
+import androidx.compose.ui.res.painterResource
+import com.zaslon.zasdict.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -12,9 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -92,7 +91,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                     if (canClear) {
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(
-                                Icons.Default.Delete,
+                                painterResource(R.drawable.delete),
                                 contentDescription = if (clearsPendingOnly) "未保存の変更を取り消す" else "更新履歴を削除"
                             )
                         }
@@ -102,7 +101,7 @@ fun ChangelogScreen(vm: MainViewModel, navController: NavController, snackbarHos
                             val base = vm.fileName?.removeSuffix(".json") ?: "dictionary"
                             exportLauncher.launch("${base}_changelog.csv")
                         }) {
-                            Icon(Icons.Default.FileDownload, contentDescription = "更新履歴を書き出す")
+                            Icon(painterResource(R.drawable.download), contentDescription = "更新履歴を書き出す")
                         }
                     }
                 }
