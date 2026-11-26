@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -38,6 +37,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.zIndex
+import com.zaslon.zasdict.ui.theme.ZasShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -512,8 +521,8 @@ fun SettingsScreen(vm: MainViewModel, navController: NavController, snackbarHost
 }
 
 /**
- * ラジオグループ。状態を選択肢の言葉で示す。
- * 選択肢を横に並べると、狭い画面や文字の倍率を上げたときに選択肢の文字が折り返して枠からはみ出すため、縦に並べる。
+ * ラジオグループの縦一列。状態を選択肢の言葉で示す。
+ * 横一列は、狭い画面や文字の倍率を上げたときに選択肢の文字が折り返して枠からはみ出すため、縦に積む。
  * 行全体を押せるようにし、支援技術にはひとまとまりの選択肢として伝える。
  */
 @Composable
@@ -523,30 +532,63 @@ private fun <T> RadioGroup(
     onSelect: (T) -> Unit,
     enabled: Boolean = true
 ) {
-    Column(modifier = Modifier.selectableGroup()) {
-        options.forEach { (value, label) ->
+    val z = ZasTheme.colors
+    val fill = if (enabled) MaterialTheme.colorScheme.primary else z.disabled
+    // 選択中の行は、接する外枠と区切り線を塗りで覆う。Modifier.border は中身より前に描かれて覆えないため、
+    // 外枠を中身の後ろに描き、行を枠の太さだけ内側に置く。角は外側の clip で切るため、行は四角く広げてよい。
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZasShape.control)
+            .drawBehind {
+                drawOutline(
+                    ZasShape.control.createOutline(size, layoutDirection, this),
+                    z.border,
+                    style = Stroke(width = RADIO_BORDER.toPx() * 2)
+                )
+            }
+            .padding(RADIO_BORDER)
+            .selectableGroup()
+    ) {
+        options.forEachIndexed { i, (value, label) ->
+            val isSel = value == selected
+            if (i > 0) HorizontalDivider(thickness = RADIO_BORDER, color = z.border)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
+                    // 次の行の区切り線より後に描き、覆えるようにする
+                    .zIndex(if (isSel) 1f else 0f)
+                    .then(
+                        if (isSel) Modifier.drawBehind {
+                            val b = RADIO_BORDER.toPx()
+                            drawRect(fill, topLeft = Offset(-b, -b), size = Size(size.width + b * 2, size.height + b * 2))
+                        } else Modifier.background(MaterialTheme.colorScheme.background)
+                    )
                     .selectable(
-                        selected = value == selected,
+                        selected = isSel,
                         enabled = enabled,
                         role = Role.RadioButton,
                         onClick = { onSelect(value) }
-                    ),
+                    )
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                RadioButton(selected = value == selected, onClick = null, enabled = enabled)
                 Text(
                     label,
-                    modifier = Modifier.padding(start = 12.dp),
-                    color = if (enabled) MaterialTheme.colorScheme.onSurface else ZasTheme.colors.disabledText
+                    color = when {
+                        isSel && enabled -> MaterialTheme.colorScheme.onPrimary
+                        isSel -> z.onDisabled
+                        enabled -> MaterialTheme.colorScheme.onBackground
+                        else -> z.disabledText
+                    }
                 )
             }
         }
     }
 }
+
+private val RADIO_BORDER = 1.dp
 
 /**
  * 説明付きのチェックボックス。文字の部分を押しても切り替わるよう、行全体を押せるようにする。
