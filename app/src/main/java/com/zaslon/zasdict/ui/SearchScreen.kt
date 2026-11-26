@@ -492,8 +492,8 @@ fun SearchScreen(
 }
 
 /**
- * 択一の選択肢を、境目を接したひと続きのボタンとして並べる。
- * 選択中は淡い塗りで示す。SegmentedButton は既定で選択中にチェックの印を出すため、icon を空にして消している。
+ * 択一の選択肢を、境目を接したひと続きのボタンとして並べる（ラジオグループの横一列）。
+ * SegmentedButton は既定で選択中にチェックの印を出し文字が動くため、icon を空にして消している。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -502,6 +502,7 @@ private fun SegmentedChoice(
     selected: String,
     onSelect: (String) -> Unit
 ) {
+    val z = ZasTheme.colors
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { i, option ->
             SegmentedButton(
@@ -510,12 +511,17 @@ private fun SegmentedChoice(
                 shape = SegmentedButtonDefaults.itemShape(i, options.size, baseShape = ZasShape.control),
                 icon = {},
                 colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    activeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    activeBorderColor = MaterialTheme.colorScheme.outline,
-                    inactiveContainerColor = Color.Transparent,
-                    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    inactiveBorderColor = MaterialTheme.colorScheme.outline,
+                    activeContainerColor = MaterialTheme.colorScheme.primary,
+                    activeContentColor = MaterialTheme.colorScheme.onPrimary,
+                    activeBorderColor = MaterialTheme.colorScheme.primary,
+                    inactiveContainerColor = MaterialTheme.colorScheme.background,
+                    inactiveContentColor = MaterialTheme.colorScheme.onBackground,
+                    inactiveBorderColor = z.border,
+                    disabledActiveContainerColor = z.disabled,
+                    disabledActiveContentColor = z.onDisabled,
+                    disabledActiveBorderColor = z.disabled,
+                    disabledInactiveContainerColor = MaterialTheme.colorScheme.background,
+                    disabledInactiveContentColor = z.disabledText,
                 ),
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp)
             ) {
